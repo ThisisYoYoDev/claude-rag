@@ -74,7 +74,7 @@ export class RagApiClient {
     return res.json();
   }
 
-  async health(): Promise<{ status: string; db: boolean }> {
+  async health(): Promise<{ status: string; db: boolean; latest_plugin_version?: string }> {
     const res = await this.fetchWithTimeout(`${this.endpoint}/health`, {
       method: "GET",
       headers: this.headers(),

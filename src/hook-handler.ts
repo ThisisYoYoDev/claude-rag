@@ -374,6 +374,8 @@ async function handleSubagentStop(
   );
 }
 
+const PLUGIN_VERSION = "0.2.1";
+
 async function handleSessionStart(
   stdin: SessionStartHook,
   client: RagApiClient,
@@ -383,37 +385,60 @@ async function handleSessionStart(
   // Skip if not configured or no API key
   if (!config.connection.apiKey) return;
 
-  // Inject project context at session start
-  if (
-    config.rag.mode === "auto" ||
-    config.rag.mode === "aggressive"
-  ) {
-    if (config.rag.sessionStart.enabled) {
-      try {
-        const result = await client.search(
-          `recent project context summary ${project}`,
-          {
-            limit: config.rag.sessionStart.maxItems,
-            threshold: config.rag.threshold,
-          }
-        );
+  const C = {
+    reset: "\x1b[0m",
+    yellow: "\x1b[33m",
+    cyan: "\x1b[36m",
+    purple: "\x1b[35m",
+    dim: "\x1b[2m",
+    green: "\x1b[32m",
+    red: "\x1b[31m",
+  };
 
-        if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config.rag.maxContextTokens);
-          const summary = `\x1b]8;;https://clauderag.io\x07\x1b[35mClaude RAG\x1b[0m\x1b]8;;\x07 — loaded \x1b[33m${result.results.length}\x1b[0m context${result.results.length > 1 ? "s" : ""} from \x1b[36m"${project}"\x1b[0m`;
+  // Run health check + RAG search in parallel
+  const [healthResult, searchResult] = await Promise.allSettled([
+    client.health(),
+    config.rag.sessionStart.enabled &&
+    (config.rag.mode === "auto" || config.rag.mode === "aggressive")
+      ? client.search(`recent project context summary ${project}`, {
+          limit: config.rag.sessionStart.maxItems,
+          threshold: config.rag.threshold,
+        })
+      : Promise.resolve(null),
+  ]);
 
-          process.stdout.write(
-            JSON.stringify({
-              additionalContext: context,
-              systemMessage: summary,
-            })
-          );
-        }
-      } catch {
-        // Silently fail
-      }
-    }
+  const health = healthResult.status === "fulfilled" ? healthResult.value : null;
+  const search = searchResult.status === "fulfilled" ? searchResult.value : null;
+
+  // Build startup message
+  const lines: string[] = [];
+
+  // Version line
+  let versionLine = `\x1b]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1b]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
+
+  // Check for update
+  if (health?.latest_plugin_version && health.latest_plugin_version !== PLUGIN_VERSION) {
+    const latest = health.latest_plugin_version;
+    versionLine += ` — ${C.yellow}update available: v${latest}${C.reset}`;
+    versionLine += `\n  Run: ${C.cyan}claude plugin update claude-rag${C.reset}`;
   }
+  lines.push(versionLine);
+
+  // RAG context line
+  let additionalContext: string | undefined;
+  if (search && search.results && search.results.length > 0) {
+    additionalContext = formatResultsForClaude(search.results, config.rag.maxContextTokens);
+    lines.push(`  Loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`);
+  }
+
+  const output: Record<string, unknown> = {
+    systemMessage: lines.join("\n"),
+  };
+  if (additionalContext) {
+    output.additionalContext = additionalContext;
+  }
+
+  process.stdout.write(JSON.stringify(output));
 }
 
 // ==========================================

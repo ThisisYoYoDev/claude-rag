@@ -691,27 +691,50 @@ async function handleSubagentStop(stdin, client, config2, project, turnId) {
     })
   ], project);
 }
+var PLUGIN_VERSION = "0.2.1";
 async function handleSessionStart(stdin, client, config2, project) {
   if (!config2.connection.apiKey)
     return;
-  if (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") {
-    if (config2.rag.sessionStart.enabled) {
-      try {
-        const result = await client.search(`recent project context summary ${project}`, {
-          limit: config2.rag.sessionStart.maxItems,
-          threshold: config2.rag.threshold
-        });
-        if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
-          const summary = `\x1B]8;;https://clauderag.io\x07\x1B[35mClaude RAG\x1B[0m\x1B]8;;\x07 — loaded \x1B[33m${result.results.length}\x1B[0m context${result.results.length > 1 ? "s" : ""} from \x1B[36m"${project}"\x1B[0m`;
-          process.stdout.write(JSON.stringify({
-            additionalContext: context,
-            systemMessage: summary
-          }));
-        }
-      } catch {}
-    }
+  const C = {
+    reset: "\x1B[0m",
+    yellow: "\x1B[33m",
+    cyan: "\x1B[36m",
+    purple: "\x1B[35m",
+    dim: "\x1B[2m",
+    green: "\x1B[32m",
+    red: "\x1B[31m"
+  };
+  const [healthResult, searchResult] = await Promise.allSettled([
+    client.health(),
+    config2.rag.sessionStart.enabled && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") ? client.search(`recent project context summary ${project}`, {
+      limit: config2.rag.sessionStart.maxItems,
+      threshold: config2.rag.threshold
+    }) : Promise.resolve(null)
+  ]);
+  const health = healthResult.status === "fulfilled" ? healthResult.value : null;
+  const search = searchResult.status === "fulfilled" ? searchResult.value : null;
+  const lines = [];
+  let versionLine = `\x1B]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1B]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
+  if (health?.latest_plugin_version && health.latest_plugin_version !== PLUGIN_VERSION) {
+    const latest = health.latest_plugin_version;
+    versionLine += ` — ${C.yellow}update available: v${latest}${C.reset}`;
+    versionLine += `
+  Run: ${C.cyan}claude plugin update claude-rag${C.reset}`;
   }
+  lines.push(versionLine);
+  let additionalContext;
+  if (search && search.results && search.results.length > 0) {
+    additionalContext = formatResultsForClaude(search.results, config2.rag.maxContextTokens);
+    lines.push(`  Loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`);
+  }
+  const output = {
+    systemMessage: lines.join(`
+`)
+  };
+  if (additionalContext) {
+    output.additionalContext = additionalContext;
+  }
+  process.stdout.write(JSON.stringify(output));
 }
 function buildEvent(stdin, contentType, content, extra) {
   const agentType = stdin.agent_type || "main";

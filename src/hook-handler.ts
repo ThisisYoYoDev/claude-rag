@@ -234,55 +234,27 @@ async function handleToolUse(
     await client.ingest(events, project);
   }
 
-  // Upload file to S3 in background (after ingest, non-blocking)
-  // Spawns a detached process so the hook can exit immediately
+  // Upload file to S3 in background (detached bash script)
   if (hasFile && filePath && config.capture.multimodal.copyFiles) {
     try {
       const { spawn } = await import("node:child_process");
-      const endpoint = config.connection.endpoint;
-      const apiKey = config.connection.apiKey || "";
+      const { dirname } = await import("node:path");
+      const scriptDir = dirname(new URL(import.meta.url).pathname).replace("/src", "/scripts").replace("/dist", "/scripts");
+      const scriptPath = `${scriptDir}/upload-file.sh`;
 
-      // Spawn a background upload process
-      const child = spawn("sh", ["-c", `
-        BUN=$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")
-        "$BUN" -e "
-          const fs = require('node:fs');
-          const path = require('node:path');
-
-          const filePath = '${filePath.replace(/'/g, "\\'")}';
-          const endpoint = '${endpoint}';
-          const apiKey = '${apiKey}';
-
-          async function upload() {
-            const stat = fs.statSync(filePath);
-            if (stat.size > 50 * 1024 * 1024) return; // skip > 50MB
-
-            const filename = path.basename(filePath);
-            const ext = filename.split('.').pop()?.toLowerCase() || '';
-            const mimeMap = {png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',pdf:'application/pdf',mp3:'audio/mp3',wav:'audio/wav',mp4:'video/mp4',webm:'video/webm'};
-            const contentType = mimeMap[ext] || 'application/octet-stream';
-            const category = ['png','jpg','jpeg','gif','svg','webp'].includes(ext)?'image':ext==='pdf'?'pdf':['mp3','wav','ogg'].includes(ext)?'audio':['mp4','webm','mov'].includes(ext)?'video':'other';
-
-            const presignRes = await fetch(endpoint+'/api/v1/upload/presign', {
-              method:'POST',
-              headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
-              body:JSON.stringify({filename,contentType,category})
-            });
-            if (!presignRes.ok) return;
-            const presign = await presignRes.json();
-
-            const fileData = fs.readFileSync(filePath);
-            await fetch(presign.upload_url, {method:'PUT',headers:{'Content-Type':contentType},body:fileData});
-          }
-          upload().catch(()=>{});
-        "
-      `], {
+      const child = spawn("bash", [
+        scriptPath,
+        filePath,
+        config.connection.endpoint,
+        config.connection.apiKey || "",
+      ], {
         detached: true,
         stdio: "ignore",
+        env: { ...process.env, PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}` },
       });
       child.unref();
     } catch {
-      // Spawn failed — no upload, text still captured
+      // Spawn failed — text description still captured
     }
   }
 }

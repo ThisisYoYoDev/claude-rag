@@ -488,14 +488,14 @@ async function main() {
   const stdin = await readStdin();
   if (!stdin)
     process.exit(0);
-  const config2 = loadConfig();
-  if (!config2.capture.enabled)
+  const config3 = loadConfig();
+  if (!config3.capture.enabled)
     process.exit(0);
-  if (!config2.connection.apiKey)
+  if (!config3.connection.apiKey)
     process.exit(0);
   const client = new RagApiClient({
-    endpoint: config2.connection.endpoint,
-    apiKey: config2.connection.apiKey,
+    endpoint: config3.connection.endpoint,
+    apiKey: config3.connection.apiKey,
     timeoutMs: 4000
   });
   const projectName = detectProject(stdin.cwd);
@@ -511,30 +511,30 @@ async function main() {
   try {
     switch (hookEvent) {
       case "UserPromptSubmit":
-        await handleUserPrompt(stdin, client, config2, projectName, turnId);
+        await handleUserPrompt(stdin, client, config3, projectName, turnId);
         break;
       case "PostToolUse":
-        await handleToolUse(stdin, client, config2, projectName, turnId);
+        await handleToolUse(stdin, client, config3, projectName, turnId);
         break;
       case "PostToolUseFailure":
-        await handleToolFailure(stdin, client, config2, projectName, turnId);
+        await handleToolFailure(stdin, client, config3, projectName, turnId);
         break;
       case "Stop":
-        await handleStop(stdin, client, config2, projectName, turnId, txInfo);
+        await handleStop(stdin, client, config3, projectName, turnId, txInfo);
         break;
       case "SubagentStop":
-        await handleSubagentStop(stdin, client, config2, projectName, turnId);
+        await handleSubagentStop(stdin, client, config3, projectName, turnId);
         break;
       case "SessionStart":
-        await handleSessionStart(stdin, client, config2, projectName);
+        await handleSessionStart(stdin, client, config3, projectName);
         break;
     }
   } catch {}
   process.exit(0);
 }
-async function handleUserPrompt(stdin, client, config2, project, turnId) {
+async function handleUserPrompt(stdin, client, config3, project, turnId) {
   const isCommand = stdin.prompt.startsWith("/claude-rag:");
-  if (config2.capture.userPrompts && !isCommand) {
+  if (config3.capture.userPrompts && !isCommand) {
     try {
       const { writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = await import("fs");
       const tmpDir = "/tmp/claude-rag";
@@ -545,15 +545,15 @@ async function handleUserPrompt(stdin, client, config2, project, turnId) {
       }));
     } catch {}
   }
-  if (!isCommand && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive")) {
-    if (config2.rag.perPrompt.enabled) {
+  if (!isCommand && (config3.rag.mode === "auto" || config3.rag.mode === "aggressive")) {
+    if (config3.rag.perPrompt.enabled) {
       try {
         const result = await client.search(stdin.prompt, {
-          limit: config2.rag.perPrompt.maxItems,
-          threshold: config2.rag.threshold
+          limit: config3.rag.perPrompt.maxItems,
+          threshold: config3.rag.threshold
         });
         if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
+          const context = formatResultsForClaude(result.results, config3.rag.maxContextTokens);
           const summary = formatResultsSummary(result.results, result.latency_ms);
           process.stdout.write(JSON.stringify({
             additionalContext: context,
@@ -564,26 +564,33 @@ async function handleUserPrompt(stdin, client, config2, project, turnId) {
     }
   }
 }
-async function handleToolUse(stdin, client, config2, project, turnId) {
-  if (config2.capture.exclude.tools.includes(stdin.tool_name))
+async function handleToolUse(stdin, client, config3, project, turnId) {
+  if (config3.capture.exclude.tools.includes(stdin.tool_name))
     return;
   const events = [];
-  if (config2.capture.toolCalls) {
+  if (config3.capture.toolCalls) {
     events.push(buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
       turnId
     }));
   }
-  if (config2.capture.toolResults) {
+  if (config3.capture.toolResults) {
     const content = typeof stdin.tool_response === "string" ? stdin.tool_response : JSON.stringify(stdin.tool_response);
     const filePath = stdin.tool_input?.file_path;
     const hasFile = isFileContent(stdin.tool_name, filePath);
+    let storageKey;
+    if (hasFile && filePath && config3.capture.multimodal.copyFiles) {
+      try {
+        storageKey = await uploadFileToS3(client, filePath);
+      } catch {}
+    }
     events.push(buildEvent(stdin, "tool_result", content, {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
       has_file: hasFile,
       file_path: filePath,
+      storageKey,
       turnId
     }));
   }
@@ -591,10 +598,10 @@ async function handleToolUse(stdin, client, config2, project, turnId) {
     await client.ingest(events, project);
   }
 }
-async function handleToolFailure(stdin, client, config2, project, turnId) {
-  if (!config2.capture.toolCalls)
+async function handleToolFailure(stdin, client, config3, project, turnId) {
+  if (!config3.capture.toolCalls)
     return;
-  if (config2.capture.exclude.tools.includes(stdin.tool_name))
+  if (config3.capture.exclude.tools.includes(stdin.tool_name))
     return;
   await client.ingest([
     buildEvent(stdin, "error", `Tool ${stdin.tool_name} failed: ${stdin.error}`, {
@@ -604,8 +611,8 @@ async function handleToolFailure(stdin, client, config2, project, turnId) {
     })
   ], project);
 }
-async function handleStop(stdin, client, config2, project, turnId, txInfo) {
-  if (!config2.capture.aiOutputs)
+async function handleStop(stdin, client, config3, project, turnId, txInfo) {
+  if (!config3.capture.aiOutputs)
     return;
   if (!stdin.last_assistant_message)
     return;
@@ -638,8 +645,8 @@ async function handleStop(stdin, client, config2, project, turnId, txInfo) {
   events.push(aiEvent);
   await client.ingest(events, ingestProject);
 }
-async function handleSubagentStop(stdin, client, config2, project, turnId) {
-  if (!config2.capture.subAgents)
+async function handleSubagentStop(stdin, client, config3, project, turnId) {
+  if (!config3.capture.subAgents)
     return;
   if (!stdin.last_assistant_message)
     return;
@@ -650,18 +657,18 @@ async function handleSubagentStop(stdin, client, config2, project, turnId) {
     })
   ], project);
 }
-async function handleSessionStart(stdin, client, config2, project) {
-  if (!config2.connection.apiKey)
+async function handleSessionStart(stdin, client, config3, project) {
+  if (!config3.connection.apiKey)
     return;
-  if (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") {
-    if (config2.rag.sessionStart.enabled) {
+  if (config3.rag.mode === "auto" || config3.rag.mode === "aggressive") {
+    if (config3.rag.sessionStart.enabled) {
       try {
         const result = await client.search(`recent project context summary ${project}`, {
-          limit: config2.rag.sessionStart.maxItems,
-          threshold: config2.rag.threshold
+          limit: config3.rag.sessionStart.maxItems,
+          threshold: config3.rag.threshold
         });
         if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
+          const context = formatResultsForClaude(result.results, config3.rag.maxContextTokens);
           const summary = `\x1B]8;;https://clauderag.io\x07\x1B[35mClaude RAG\x1B[0m\x1B]8;;\x07 \u2014 loaded \x1B[33m${result.results.length}\x1B[0m context${result.results.length > 1 ? "s" : ""} from \x1B[36m"${project}"\x1B[0m`;
           process.stdout.write(JSON.stringify({
             additionalContext: context,
@@ -686,6 +693,7 @@ function buildEvent(stdin, contentType, content, extra) {
     is_sub_agent: isSubAgent,
     has_file: extra?.has_file,
     file_path: extra?.file_path,
+    storage_key: extra?.storageKey,
     hook_event_name: stdin.hook_event_name,
     timestamp: new Date().toISOString(),
     turn_id: extra?.turnId
@@ -730,6 +738,54 @@ async function readTranscriptInfo(transcriptPath) {
     }
   } catch {}
   return info;
+}
+async function uploadFileToS3(client, filePath) {
+  const { readFileSync: readFileSync2, statSync } = await import("fs");
+  const { basename } = await import("path");
+  const stat = statSync(filePath);
+  if (stat.size > 52428800)
+    throw new Error("File too large");
+  const filename = basename(filePath);
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  const mimeMap = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+    webp: "image/webp",
+    pdf: "application/pdf",
+    mp3: "audio/mp3",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime"
+  };
+  const contentType = mimeMap[ext] || "application/octet-stream";
+  const category = ["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext) ? "image" : ext === "pdf" ? "pdf" : ["mp3", "wav", "ogg"].includes(ext) ? "audio" : ["mp4", "webm", "mov"].includes(ext) ? "video" : "other";
+  const endpoint = config.connection.endpoint;
+  const apiKey = config.connection.apiKey;
+  const presignRes = await fetch(`${endpoint}/api/v1/upload/presign`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
+    },
+    body: JSON.stringify({ filename, contentType, category })
+  });
+  if (!presignRes.ok)
+    throw new Error(`Presign failed: ${presignRes.status}`);
+  const presign = await presignRes.json();
+  const fileData = readFileSync2(filePath);
+  const uploadRes = await fetch(presign.upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: fileData
+  });
+  if (!uploadRes.ok)
+    throw new Error(`S3 upload failed: ${uploadRes.status}`);
+  return presign.key;
 }
 function detectProject(cwd) {
   if (!cwd)

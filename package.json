@@ -4,8 +4,8 @@
   "type": "module",
   "main": "dist/hook-handler.js",
   "scripts": {
-    "build": "bun build src/hook-handler.ts --outdir dist --target bun --bundle",
-    "dev": "bun build src/hook-handler.ts --outdir dist --target bun --bundle --watch",
+    "build": "PATH=\"$HOME/.bun/bin:$PATH\" bun build src/hook-handler.ts --outdir dist --target bun --bundle && PATH=\"$HOME/.bun/bin:$PATH\" bun build src/mcp-server.ts --outdir dist --target bun --bundle",
+    "dev": "PATH=\"$HOME/.bun/bin:$PATH\" bun build src/hook-handler.ts --outdir dist --target bun --bundle --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" fill="none">
   <style>
     text { font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
     .bg { fill: #0a0a1a; }
@@ -65,8 +65,8 @@
   </style>
 
   <!-- Terminal frame -->
-  <rect class="bg" width="800" height="520" rx="12"/>
-  <rect class="border" x="0.5" y="0.5" width="799" height="519" rx="12"/>
+  <rect class="bg" width="800" height="550" rx="12"/>
+  <rect class="border" x="0.5" y="0.5" width="799" height="549" rx="12"/>
   <rect class="header" width="800" height="40" rx="12"/>
   <rect class="bg" y="28" width="800" height="14"/>
   <circle fill="#ef4444" cx="24" cy="20" r="6"/>
@@ -137,9 +137,10 @@
     <!-- Claude response -->
     <g class="line l10">
       <text class="bullet" x="32" y="360">●</text>
-      <text class="resp" x="52" y="360">The auth bug was in src/auth/token.ts.</text>
-      <text class="resp" x="52" y="384">TOKEN_EXPIRY was set to 3600s (1 hour) instead</text>
-      <text class="resp" x="52" y="408">of 86400 (24 hours). Fixed it, all 14 tests pass.</text>
+      <text class="resp" x="52" y="360">The auth bug was in <tspan class="code">src/auth/token.ts</tspan>. The</text>
+      <text class="resp" x="52" y="384"><tspan class="code">TOKEN_EXPIRY</tspan> was set to 3600 seconds (1 hour)</text>
+      <text class="resp" x="52" y="408">instead of 86400 (24 hours). I fixed it and all</text>
+      <text class="resp" x="52" y="432">14 tests pass now.</text>
     </g>
   </g>
 </svg>

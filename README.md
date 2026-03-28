@@ -4,7 +4,9 @@
 
 The first open source RAG plugin for [Claude Code](https://claude.ai/code). Every conversation, tool call and AI response — indexed and searchable across all your sessions.
 
-![Claude RAG](https://clauderag.io/logo.svg)
+<p align="center">
+  <img src="assets/demo.svg" alt="Claude RAG Demo" width="800">
+</p>
 
 ## What it does
 

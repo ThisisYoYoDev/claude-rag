@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" fill="none">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+
+    .bg { fill: #0a0a1a; }
+    .border { fill: none; stroke: rgba(124,58,237,0.15); stroke-width: 1; }
+    .header { fill: #0d0d1f; }
+    .dot-red { fill: #ef4444; }
+    .dot-yellow { fill: #eab308; }
+    .dot-green { fill: #22c55e; }
+
+    text { font-family: 'JetBrains Mono', 'SF Mono', monospace; }
+    .chevron { fill: #6b7280; font-size: 14px; font-weight: 700; }
+    .input { fill: #f1f5f9; font-size: 14px; font-weight: 700; }
+    .hook-label { fill: #4b5563; font-size: 12px; }
+    .hook-text { fill: #6b7280; font-size: 12px; }
+    .rag-purple { fill: #8b5cf6; font-size: 12px; }
+    .score { fill: #fbbf24; font-size: 12px; font-weight: 700; }
+    .result-text { fill: #94a3b8; font-size: 12px; }
+    .tool-text { fill: #38bdf8; font-size: 12px; }
+    .dim { fill: #4b5563; font-size: 12px; }
+    .answer { fill: #64748b; font-size: 12px; }
+    .bullet { fill: #f59e0b; font-size: 12px; }
+    .response { fill: #e2e8f0; font-size: 13px; }
+    .code { fill: #8b5cf6; font-size: 13px; }
+    .more { fill: #4b5563; font-size: 12px; }
+
+    /* Animations — each line fades in sequentially */
+    .line { opacity: 0; }
+    .line-1 { animation: appear 0.3s 0.5s forwards; }
+    .line-2 { animation: appear 0.3s 1.2s forwards; }
+    .line-3 { animation: appear 0.3s 1.5s forwards; }
+    .line-4 { animation: appear 0.3s 1.8s forwards; }
+    .line-5 { animation: appear 0.3s 2.1s forwards; }
+    .line-6 { animation: appear 0.3s 2.4s forwards; }
+    .line-7 { animation: appear 0.3s 2.7s forwards; }
+    .line-8 { animation: appear 0.3s 3.0s forwards; }
+    .line-9 { animation: appear 0.3s 3.3s forwards; }
+    .line-10 { animation: appear 0.3s 4.0s forwards; }
+
+    /* Typing cursor on the prompt */
+    .cursor { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    @keyframes appear { to { opacity: 1; } }
+
+    /* Loop: restart after full display */
+    .all-lines { animation: loop 12s infinite; }
+    @keyframes loop {
+      0%, 8% { opacity: 1; }
+      85% { opacity: 1; }
+      95% { opacity: 0; }
+      100% { opacity: 0; }
+    }
+  </style>
+
+  <!-- Terminal frame -->
+  <rect class="bg" width="800" height="520" rx="12"/>
+  <rect class="border" x="0.5" y="0.5" width="799" height="519" rx="12"/>
+
+  <!-- Header bar -->
+  <rect class="header" width="800" height="40" rx="12"/>
+  <rect class="bg" y="28" width="800" height="14"/>
+  <circle class="dot-red" cx="24" cy="20" r="6"/>
+  <circle class="dot-yellow" cx="44" cy="20" r="6"/>
+  <circle class="dot-green" cx="64" cy="20" r="6"/>
+
+  <g class="all-lines">
+    <!-- Line 1: Prompt -->
+    <g class="line line-1">
+      <text class="chevron" x="32" y="80">›</text>
+      <text class="input" x="48" y="80">how did we fix the auth bug?</text>
+    </g>
+
+    <!-- Line 2: Hook label -->
+    <g class="line line-2">
+      <text class="hook-label" x="40" y="116">└</text>
+      <text class="hook-text" x="56" y="116">UserPromptSubmit says:</text>
+      <text class="rag-purple" x="228" y="116">🔍 RAG found 3 matches</text>
+      <text class="dim" x="430" y="116">(8ms)</text>
+    </g>
+
+    <!-- Line 3: Result 1 - Question -->
+    <g class="line line-3">
+      <text class="result-text" x="72" y="148">💬</text>
+      <text class="score" x="96" y="148">87%</text>
+      <text class="result-text" x="132" y="148">— Q: Fix the authentication bug in login</text>
+    </g>
+
+    <!-- Line 4: Result 1 - Tools -->
+    <g class="line line-4">
+      <text class="result-text" x="96" y="172">🔧</text>
+      <text class="tool-text" x="120" y="172">2x Read, 1x Bash</text>
+    </g>
+
+    <!-- Line 5: Result 1 - Answer -->
+    <g class="line line-5">
+      <text class="result-text" x="96" y="196">🤖</text>
+      <text class="answer" x="120" y="196">A: Changed TOKEN_EXPIRY from 3600 to 86400...</text>
+      <text class="dim" x="480" y="196">(247 tokens)</text>
+    </g>
+
+    <!-- Line 6: Result 2 - Question -->
+    <g class="line line-6">
+      <text class="result-text" x="72" y="228">💬</text>
+      <text class="score" x="96" y="228">83%</text>
+      <text class="result-text" x="132" y="228">— Q: Do the auth tests pass?</text>
+    </g>
+
+    <!-- Line 7: Result 2 - Answer -->
+    <g class="line line-7">
+      <text class="result-text" x="96" y="252">🤖</text>
+      <text class="answer" x="120" y="252">A: 14 passed, 0 failed</text>
+      <text class="dim" x="328" y="252">(5 tokens)</text>
+    </g>
+
+    <!-- Line 8: Result 3 -->
+    <g class="line line-8">
+      <text class="result-text" x="72" y="280">🔧</text>
+      <text class="score" x="96" y="280">68%</text>
+      <text class="dim" x="132" y="280">Read — src/auth/token.ts</text>
+    </g>
+
+    <!-- Line 9: More -->
+    <g class="line line-9">
+      <text class="more" x="72" y="308">... +2 more</text>
+    </g>
+
+    <!-- Line 10: Claude response -->
+    <g class="line line-10">
+      <text class="bullet" x="32" y="360">●</text>
+      <text class="response" x="52" y="360">The auth bug was in</text>
+      <text class="code" x="240" y="360">src/auth/token.ts</text>
+      <text class="response" x="400" y="360">. The</text>
+      <text class="code" x="440" y="360">TOKEN_EXPIRY</text>
+      <text class="response" x="562" y="360">was set</text>
+      <text class="response" x="52" y="384">to 3600 seconds (1 hour) instead of 86400 (24 hours).</text>
+      <text class="response" x="52" y="408">I fixed it and all 14 tests pass now.</text>
+    </g>
+  </g>
+
+  <!-- Typing cursor (visible before content appears) -->
+  <rect class="cursor" x="48" y="68" width="8" height="16" fill="#f1f5f9" rx="1">
+    <animate attributeName="opacity" values="1;1;0;0" dur="1s" begin="0s" end="0.5s" repeatCount="indefinite"/>
+  </rect>
+</svg>

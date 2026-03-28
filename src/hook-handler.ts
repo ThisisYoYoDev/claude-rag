@@ -430,8 +430,8 @@ async function handleSessionStart(
     versionLine += ` — loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
   }
 
-  // Check for update (on new line if there's one)
-  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
+  // Check for update (only if marketplace version is newer)
+  if (latestVersion && isNewerVersion(latestVersion, PLUGIN_VERSION)) {
     versionLine += `\n  ${C.yellow}Update available: v${latestVersion}${C.reset} — run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
   }
   lines.push(versionLine);
@@ -449,6 +449,17 @@ async function handleSessionStart(
 // ==========================================
 // Helpers
 // ==========================================
+
+/** Returns true if `latest` is strictly newer than `current` (semver) */
+function isNewerVersion(latest: string, current: string): boolean {
+  const a = latest.split(".").map(Number);
+  const b = current.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] || 0) > (b[i] || 0)) return true;
+    if ((a[i] || 0) < (b[i] || 0)) return false;
+  }
+  return false;
+}
 
 function buildEvent(
   stdin: HookBase,

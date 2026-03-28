@@ -743,7 +743,7 @@ async function handleSessionStart(stdin, client, config2, project) {
     additionalContext = formatResultsForClaude(search.results, config2.rag.maxContextTokens);
     versionLine += ` — loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
   }
-  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
+  if (latestVersion && isNewerVersion(latestVersion, PLUGIN_VERSION)) {
     versionLine += `
   ${C.yellow}Update available: v${latestVersion}${C.reset} — run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
   }
@@ -756,6 +756,17 @@ async function handleSessionStart(stdin, client, config2, project) {
     output.additionalContext = additionalContext;
   }
   process.stdout.write(JSON.stringify(output));
+}
+function isNewerVersion(latest, current) {
+  const a = latest.split(".").map(Number);
+  const b = current.split(".").map(Number);
+  for (let i = 0;i < 3; i++) {
+    if ((a[i] || 0) > (b[i] || 0))
+      return true;
+    if ((a[i] || 0) < (b[i] || 0))
+      return false;
+  }
+  return false;
 }
 function buildEvent(stdin, contentType, content, extra) {
   const agentType = stdin.agent_type || "main";

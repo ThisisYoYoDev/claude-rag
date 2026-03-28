@@ -26,18 +26,37 @@ Every conversation, tool call and AI response — indexed and searchable across 
 - **Searches instantly** — DiskANN vector search, context injected silently into every prompt
 - **Links turns** — Q + Tools + A grouped together via transcript promptId
 
-## Quick start
+## Installation
+
+### Step 1 — Add the marketplace
 
 ```bash
-claude /plugin install claude-rag
+/plugin marketplace add ThisisYoYoDev/claude-plugins
 ```
 
-Then run:
+### Step 2 — Install the plugin
+
+```bash
+/plugin install claude-rag@yoyodev
 ```
+
+### Step 3 — Create your account
+
+```bash
 /claude-rag:setup
 ```
 
-That's it. Your conversations are now being captured and searchable.
+This will:
+- Detect your email from `git config`
+- Send a verification magic link
+- Save your API key
+- Auto-approve all MCP tools
+
+### Step 4 — You're done
+
+Start using Claude Code normally. Your conversations are now captured automatically, and relevant context from past sessions is injected into every prompt.
+
+> **Already have an account?** Use `/claude-rag:login` to sign in on a new machine.
 
 ## How it works
 

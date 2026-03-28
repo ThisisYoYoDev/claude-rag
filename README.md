@@ -111,7 +111,6 @@ The plugin exposes native MCP tools (no curl hacks):
 - **Backend**: Hono + Bun (TypeScript)
 - **Database**: PostgreSQL + pgvector + pgvectorscale (DiskANN)
 - **Embeddings**: Gemini Embedding 2 (1536d)
-- **Auth**: Magic link email verification
 
 ## Configuration
 

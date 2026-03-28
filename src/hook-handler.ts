@@ -238,23 +238,34 @@ async function handleToolUse(
   if (hasFile && filePath && config.capture.multimodal.copyFiles) {
     try {
       const { spawn } = await import("node:child_process");
-      const { dirname } = await import("node:path");
-      const scriptDir = dirname(new URL(import.meta.url).pathname).replace("/src", "/scripts").replace("/dist", "/scripts");
-      const scriptPath = `${scriptDir}/upload-file.sh`;
+      // Resolve script path: try CLAUDE_PLUGIN_ROOT first, then relative to this file
+      const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || "";
+      let scriptPath = pluginRoot ? `${pluginRoot}/scripts/upload-file.sh` : "";
+      if (!scriptPath) {
+        const { dirname } = await import("node:path");
+        const dir = dirname(new URL(import.meta.url).pathname);
+        scriptPath = `${dir.replace("/src", "").replace("/dist", "")}/scripts/upload-file.sh`;
+      }
 
-      const child = spawn("bash", [
-        scriptPath,
-        filePath,
-        config.connection.endpoint,
-        config.connection.apiKey || "",
-      ], {
-        detached: true,
-        stdio: "ignore",
-        env: { ...process.env, PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}` },
-      });
-      child.unref();
-    } catch {
-      // Spawn failed — text description still captured
+      // Verify script exists
+      const { existsSync } = await import("node:fs");
+      if (!existsSync(scriptPath)) {
+        process.stderr.write(`[claude-rag] Upload script not found: ${scriptPath}\n`);
+      } else {
+        const child = spawn("bash", [
+          scriptPath,
+          filePath,
+          config.connection.endpoint,
+          config.connection.apiKey || "",
+        ], {
+          detached: true,
+          stdio: "ignore",
+          env: { ...process.env, PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}` },
+        });
+        child.unref();
+      }
+    } catch (e) {
+      process.stderr.write(`[claude-rag] Upload spawn error: ${e}\n`);
     }
   }
 }

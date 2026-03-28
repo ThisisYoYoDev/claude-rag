@@ -103,7 +103,7 @@ The plugin exposes native MCP tools (no curl hacks):
 - **Token tracking** — real Anthropic token counts from the transcript
 - **Multi-project** — search across all projects
 - **Soft delete** — never lose data
-- **Magic link auth** — email verification via Brevo
+- **Magic link auth** — email verification
 - **DiskANN index** — PostgreSQL + pgvectorscale, 28x faster than Pinecone
 
 ## Tech stack
@@ -111,8 +111,7 @@ The plugin exposes native MCP tools (no curl hacks):
 - **Backend**: Hono + Bun (TypeScript)
 - **Database**: PostgreSQL + pgvector + pgvectorscale (DiskANN)
 - **Embeddings**: Gemini Embedding 2 (1536d)
-- **Auth**: Magic link via Brevo
-- **Hosting**: Hetzner VPS + Cloudflare SSL
+- **Auth**: Magic link email verification
 
 ## Configuration
 

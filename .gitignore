@@ -3,3 +3,10 @@ node_modules/
 .env.local
 *.log
 .DS_Store
+
+# Build artifacts (keep only dist/hook-handler.js)
+dist/*.d.ts
+dist/*.d.ts.map
+dist/*.js.map
+dist/api-client.*
+dist/config.*

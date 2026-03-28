@@ -1,0 +1,76 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\" 2>/dev/null || node \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\" 2>/dev/null || node \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\" 2>/dev/null || node \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\" 2>/dev/null || node \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\" 2>/dev/null || node \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\" 2>/dev/null || node \"${CLAUDE_PLUGIN_ROOT}/dist/hook-handler.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

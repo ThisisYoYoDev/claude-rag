@@ -1,0 +1,23 @@
+{
+  "name": "claude-rag",
+  "description": "RAG plugin for Claude Code — capture, index, and search across all conversations, tools, and sub-agents",
+  "version": "0.1.0",
+  "author": {
+    "name": "YoyoDev"
+  },
+  "commands": [
+    "./commands/search.md",
+    "./commands/ask.md",
+    "./commands/browse.md",
+    "./commands/stats.md",
+    "./commands/forget.md",
+    "./commands/restore.md",
+    "./commands/setup.md",
+    "./commands/config.md",
+    "./commands/logout.md",
+    "./commands/login.md"
+  ],
+  "homepage": "https://github.com/yoyodev/claude-rag",
+  "license": "MIT",
+  "keywords": ["rag", "search", "memory", "context", "embeddings", "vector"]
+}

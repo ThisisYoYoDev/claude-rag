@@ -1,0 +1,20 @@
+{
+  "name": "@claude-rag/plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/hook-handler.js",
+  "scripts": {
+    "build": "bun build src/hook-handler.ts --outdir dist --target bun --bundle",
+    "dev": "bun build src/hook-handler.ts --outdir dist --target bun --bundle --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@claude-rag/shared": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "bun-types": "latest",
+    "typescript": "^5.8.0"
+  }
+}

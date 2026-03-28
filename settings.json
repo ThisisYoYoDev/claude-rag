@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_claude-rag_rag__search",
+      "mcp__plugin_claude-rag_rag__stats",
+      "mcp__plugin_claude-rag_rag__browse_sessions",
+      "mcp__plugin_claude-rag_rag__browse_projects",
+      "mcp__plugin_claude-rag_rag__forget",
+      "mcp__plugin_claude-rag_rag__restore",
+      "mcp__plugin_claude-rag_rag__health"
+    ]
+  }
+}

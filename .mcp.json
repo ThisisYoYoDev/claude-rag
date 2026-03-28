@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rag": {
+      "command": "/bin/sh",
+      "args": ["-c", "BUN=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\") && exec \"$BUN\" run \"${CLAUDE_PLUGIN_ROOT}/src/mcp-server.ts\""]
+    }
+  }
+}

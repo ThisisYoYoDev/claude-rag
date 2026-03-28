@@ -247,11 +247,20 @@ async function handleToolUse(
         scriptPath = `${dir.replace("/src", "").replace("/dist", "")}/scripts/upload-file.sh`;
       }
 
-      // Verify script exists
+      // Verify script exists, try multiple paths
       const { existsSync } = await import("node:fs");
       if (!existsSync(scriptPath)) {
-        process.stderr.write(`[claude-rag] Upload script not found: ${scriptPath}\n`);
-      } else {
+        // Fallback: resolve from the running script's location
+        const { dirname } = await import("node:path");
+        const thisFile = process.argv[1] || "";
+        const altPath = `${dirname(thisFile).replace("/dist", "").replace("/src", "")}/scripts/upload-file.sh`;
+        if (existsSync(altPath)) {
+          scriptPath = altPath;
+        } else {
+          process.stderr.write(`[claude-rag] Upload script not found: ${scriptPath} nor ${altPath}\n`);
+        }
+      }
+      if (existsSync(scriptPath)) {
         const child = spawn("bash", [
           scriptPath,
           filePath,

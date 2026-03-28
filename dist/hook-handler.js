@@ -602,9 +602,17 @@ async function handleToolUse(stdin, client, config3, project, turnId) {
       }
       const { existsSync: existsSync2 } = await import("fs");
       if (!existsSync2(scriptPath)) {
-        process.stderr.write(`[claude-rag] Upload script not found: ${scriptPath}
+        const { dirname } = await import("path");
+        const thisFile = process.argv[1] || "";
+        const altPath = `${dirname(thisFile).replace("/dist", "").replace("/src", "")}/scripts/upload-file.sh`;
+        if (existsSync2(altPath)) {
+          scriptPath = altPath;
+        } else {
+          process.stderr.write(`[claude-rag] Upload script not found: ${scriptPath} nor ${altPath}
 `);
-      } else {
+        }
+      }
+      if (existsSync2(scriptPath)) {
         const child = spawn("bash", [
           scriptPath,
           filePath,

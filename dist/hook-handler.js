@@ -482,8 +482,30 @@ class RagApiClient {
     return res.json();
   }
 }
+// package.json
+var package_default = {
+  name: "@claude-rag/plugin",
+  version: "0.2.1",
+  type: "module",
+  main: "dist/hook-handler.js",
+  scripts: {
+    build: 'PATH="$HOME/.bun/bin:$PATH" bun build src/hook-handler.ts --outdir dist --target bun --bundle && PATH="$HOME/.bun/bin:$PATH" bun build src/mcp-server.ts --outdir dist --target bun --bundle',
+    dev: 'PATH="$HOME/.bun/bin:$PATH" bun build src/hook-handler.ts --outdir dist --target bun --bundle --watch',
+    typecheck: "tsc --noEmit"
+  },
+  dependencies: {
+    "@claude-rag/shared": "workspace:*",
+    zod: "^4.3.6"
+  },
+  devDependencies: {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "bun-types": "latest",
+    typescript: "^5.8.0"
+  }
+};
 
 // src/hook-handler.ts
+var PLUGIN_VERSION = package_default.version;
 async function main() {
   const stdin = await readStdin();
   if (!stdin)
@@ -691,7 +713,6 @@ async function handleSubagentStop(stdin, client, config2, project, turnId) {
     })
   ], project);
 }
-var PLUGIN_VERSION = "0.2.1";
 async function handleSessionStart(stdin, client, config2, project) {
   if (!config2.connection.apiKey)
     return;
@@ -704,20 +725,21 @@ async function handleSessionStart(stdin, client, config2, project) {
     green: "\x1B[32m",
     red: "\x1B[31m"
   };
-  const [healthResult, searchResult] = await Promise.allSettled([
-    client.health(),
+  const marketplaceUrl = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
+  const [marketplaceResult, searchResult] = await Promise.allSettled([
+    fetch(marketplaceUrl, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     config2.rag.sessionStart.enabled && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") ? client.search(`recent project context summary ${project}`, {
       limit: config2.rag.sessionStart.maxItems,
       threshold: config2.rag.threshold
     }) : Promise.resolve(null)
   ]);
-  const health = healthResult.status === "fulfilled" ? healthResult.value : null;
+  const marketplace = marketplaceResult.status === "fulfilled" ? marketplaceResult.value : null;
   const search = searchResult.status === "fulfilled" ? searchResult.value : null;
+  const latestVersion = marketplace?.plugins?.find((p) => p.name === "claude-rag")?.version;
   const lines = [];
   let versionLine = `\x1B]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1B]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
-  if (health?.latest_plugin_version && health.latest_plugin_version !== PLUGIN_VERSION) {
-    const latest = health.latest_plugin_version;
-    versionLine += ` — ${C.yellow}update available: v${latest}${C.reset}`;
+  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
+    versionLine += ` — ${C.yellow}update available: v${latestVersion}${C.reset}`;
     versionLine += `
   Run: ${C.cyan}claude plugin update claude-rag${C.reset}`;
   }

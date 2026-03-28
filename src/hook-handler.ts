@@ -3,6 +3,9 @@
 import { loadConfig } from "./config";
 import { RagApiClient } from "./api-client";
 import type { RawEvent } from "@claude-rag/shared";
+import pkg from "../package.json";
+
+const PLUGIN_VERSION = pkg.version;
 
 // ==========================================
 // Types for Claude Code hook stdin payloads
@@ -374,8 +377,6 @@ async function handleSubagentStop(
   );
 }
 
-const PLUGIN_VERSION = "0.2.1";
-
 async function handleSessionStart(
   stdin: SessionStartHook,
   client: RagApiClient,
@@ -395,9 +396,12 @@ async function handleSessionStart(
     red: "\x1b[31m",
   };
 
-  // Run health check + RAG search in parallel
-  const [healthResult, searchResult] = await Promise.allSettled([
-    client.health(),
+  // Check marketplace for latest version + RAG search in parallel
+  const marketplaceUrl = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
+  const [marketplaceResult, searchResult] = await Promise.allSettled([
+    fetch(marketplaceUrl, { signal: AbortSignal.timeout(3000) })
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null),
     config.rag.sessionStart.enabled &&
     (config.rag.mode === "auto" || config.rag.mode === "aggressive")
       ? client.search(`recent project context summary ${project}`, {
@@ -407,8 +411,11 @@ async function handleSessionStart(
       : Promise.resolve(null),
   ]);
 
-  const health = healthResult.status === "fulfilled" ? healthResult.value : null;
+  const marketplace = marketplaceResult.status === "fulfilled" ? marketplaceResult.value : null;
   const search = searchResult.status === "fulfilled" ? searchResult.value : null;
+
+  // Extract latest version from marketplace
+  const latestVersion = marketplace?.plugins?.find((p: any) => p.name === "claude-rag")?.version;
 
   // Build startup message
   const lines: string[] = [];
@@ -417,9 +424,8 @@ async function handleSessionStart(
   let versionLine = `\x1b]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1b]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
 
   // Check for update
-  if (health?.latest_plugin_version && health.latest_plugin_version !== PLUGIN_VERSION) {
-    const latest = health.latest_plugin_version;
-    versionLine += ` — ${C.yellow}update available: v${latest}${C.reset}`;
+  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
+    versionLine += ` — ${C.yellow}update available: v${latestVersion}${C.reset}`;
     versionLine += `\n  Run: ${C.cyan}claude plugin update claude-rag${C.reset}`;
   }
   lines.push(versionLine);

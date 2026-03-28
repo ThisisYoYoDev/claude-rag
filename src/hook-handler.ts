@@ -202,6 +202,10 @@ async function handleToolUse(
 
   const events: RawEvent[] = [];
 
+  // Detect file early so it's available for both ingest and S3 upload
+  const filePath = stdin.tool_input?.file_path as string | undefined;
+  const hasFile = isFileContent(stdin.tool_name, filePath);
+
   if (config.capture.toolCalls) {
     events.push(
       buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
@@ -217,9 +221,6 @@ async function handleToolUse(
       typeof stdin.tool_response === "string"
         ? stdin.tool_response
         : JSON.stringify(stdin.tool_response);
-
-    const filePath = stdin.tool_input?.file_path as string | undefined;
-    const hasFile = isFileContent(stdin.tool_name, filePath);
 
     events.push(
       buildEvent(stdin, "tool_result", content, {
@@ -526,59 +527,6 @@ async function readTranscriptInfo(transcriptPath: string): Promise<TranscriptInf
 async function getPromptIdFromTranscript(transcriptPath: string): Promise<string | undefined> {
   const info = await readTranscriptInfo(transcriptPath);
   return info.promptId;
-}
-
-/** Upload a file to S3 via presigned URL. Returns the storage key. */
-async function uploadFileToS3(client: RagApiClient, filePath: string): Promise<string> {
-  const { readFileSync, statSync } = await import("node:fs");
-  const { basename } = await import("node:path");
-
-  const stat = statSync(filePath);
-  // Skip files > 50MB
-  if (stat.size > 50 * 1024 * 1024) throw new Error("File too large");
-
-  const filename = basename(filePath);
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  const mimeMap: Record<string, string> = {
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-    svg: "image/svg+xml", webp: "image/webp",
-    pdf: "application/pdf",
-    mp3: "audio/mp3", wav: "audio/wav", ogg: "audio/ogg",
-    mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
-  };
-  const contentType = mimeMap[ext] || "application/octet-stream";
-  const category = ["png","jpg","jpeg","gif","svg","webp"].includes(ext) ? "image"
-    : ext === "pdf" ? "pdf"
-    : ["mp3","wav","ogg"].includes(ext) ? "audio"
-    : ["mp4","webm","mov"].includes(ext) ? "video"
-    : "other";
-
-  // Get presigned URL from backend
-  const endpoint = config.connection.endpoint;
-  const apiKey = config.connection.apiKey;
-  const presignRes = await fetch(`${endpoint}/api/v1/upload/presign`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
-    body: JSON.stringify({ filename, contentType, category }),
-  });
-
-  if (!presignRes.ok) throw new Error(`Presign failed: ${presignRes.status}`);
-  const presign = (await presignRes.json()) as { upload_url: string; key: string };
-
-  // Upload file directly to S3
-  const fileData = readFileSync(filePath);
-  const uploadRes = await fetch(presign.upload_url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: fileData,
-  });
-
-  if (!uploadRes.ok) throw new Error(`S3 upload failed: ${uploadRes.status}`);
-
-  return presign.key;
 }
 
 function detectProject(cwd?: string): string {

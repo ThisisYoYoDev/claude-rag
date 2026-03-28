@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// @bun
-var __require = import.meta.require;
+import { createRequire } from "node:module";
+var __require = /* @__PURE__ */ createRequire(import.meta.url);
 // ../packages/shared/src/labels.ts
 var LABELS = {
   USER_PROMPT: 1,
@@ -393,7 +393,7 @@ var DEFAULT_CONFIG = {
   }
 };
 // src/config.ts
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 function getConfigPath() {
   const claudeDir = process.env.CLAUDE_CONFIG_DIR || `${process.env.HOME}/.claude`;
   return `${claudeDir}/plugins/claude-rag/config.json`;
@@ -488,14 +488,14 @@ async function main() {
   const stdin = await readStdin();
   if (!stdin)
     process.exit(0);
-  const config3 = loadConfig();
-  if (!config3.capture.enabled)
+  const config2 = loadConfig();
+  if (!config2.capture.enabled)
     process.exit(0);
-  if (!config3.connection.apiKey)
+  if (!config2.connection.apiKey)
     process.exit(0);
   const client = new RagApiClient({
-    endpoint: config3.connection.endpoint,
-    apiKey: config3.connection.apiKey,
+    endpoint: config2.connection.endpoint,
+    apiKey: config2.connection.apiKey,
     timeoutMs: 4000
   });
   const projectName = detectProject(stdin.cwd);
@@ -511,33 +511,33 @@ async function main() {
   try {
     switch (hookEvent) {
       case "UserPromptSubmit":
-        await handleUserPrompt(stdin, client, config3, projectName, turnId);
+        await handleUserPrompt(stdin, client, config2, projectName, turnId);
         break;
       case "PostToolUse":
-        await handleToolUse(stdin, client, config3, projectName, turnId);
+        await handleToolUse(stdin, client, config2, projectName, turnId);
         break;
       case "PostToolUseFailure":
-        await handleToolFailure(stdin, client, config3, projectName, turnId);
+        await handleToolFailure(stdin, client, config2, projectName, turnId);
         break;
       case "Stop":
-        await handleStop(stdin, client, config3, projectName, turnId, txInfo);
+        await handleStop(stdin, client, config2, projectName, turnId, txInfo);
         break;
       case "SubagentStop":
-        await handleSubagentStop(stdin, client, config3, projectName, turnId);
+        await handleSubagentStop(stdin, client, config2, projectName, turnId);
         break;
       case "SessionStart":
-        await handleSessionStart(stdin, client, config3, projectName);
+        await handleSessionStart(stdin, client, config2, projectName);
         break;
     }
   } catch {}
   await new Promise((r) => setTimeout(r, 50));
   process.exit(0);
 }
-async function handleUserPrompt(stdin, client, config3, project, turnId) {
+async function handleUserPrompt(stdin, client, config2, project, turnId) {
   const isCommand = stdin.prompt.startsWith("/claude-rag:");
-  if (config3.capture.userPrompts && !isCommand) {
+  if (config2.capture.userPrompts && !isCommand) {
     try {
-      const { writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = await import("fs");
+      const { writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = await import("node:fs");
       const tmpDir = "/tmp/claude-rag";
       mkdirSync2(tmpDir, { recursive: true });
       writeFileSync2(`${tmpDir}/pending-${stdin.session_id}.json`, JSON.stringify({
@@ -546,15 +546,15 @@ async function handleUserPrompt(stdin, client, config3, project, turnId) {
       }));
     } catch {}
   }
-  if (!isCommand && (config3.rag.mode === "auto" || config3.rag.mode === "aggressive")) {
-    if (config3.rag.perPrompt.enabled) {
+  if (!isCommand && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive")) {
+    if (config2.rag.perPrompt.enabled) {
       try {
         const result = await client.search(stdin.prompt, {
-          limit: config3.rag.perPrompt.maxItems,
-          threshold: config3.rag.threshold
+          limit: config2.rag.perPrompt.maxItems,
+          threshold: config2.rag.threshold
         });
         if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config3.rag.maxContextTokens);
+          const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
           const summary = formatResultsSummary(result.results, result.latency_ms);
           process.stdout.write(JSON.stringify({
             additionalContext: context,
@@ -565,45 +565,45 @@ async function handleUserPrompt(stdin, client, config3, project, turnId) {
     }
   }
 }
-async function handleToolUse(stdin, client, config3, project, turnId) {
-  if (config3.capture.exclude.tools.includes(stdin.tool_name))
+async function handleToolUse(stdin, client, config2, project, turnId) {
+  if (config2.capture.exclude.tools.includes(stdin.tool_name))
     return;
   const events = [];
-  if (config3.capture.toolCalls) {
+  const filePath = stdin.tool_input?.file_path;
+  const hasFile = isFileContent(stdin.tool_name, filePath);
+  if (config2.capture.toolCalls) {
     events.push(buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
       turnId
     }));
   }
-  if (config3.capture.toolResults) {
+  if (config2.capture.toolResults) {
     const content = typeof stdin.tool_response === "string" ? stdin.tool_response : JSON.stringify(stdin.tool_response);
-    const filePath2 = stdin.tool_input?.file_path;
-    const hasFile2 = isFileContent(stdin.tool_name, filePath2);
     events.push(buildEvent(stdin, "tool_result", content, {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
-      has_file: hasFile2,
-      file_path: filePath2,
+      has_file: hasFile,
+      file_path: filePath,
       turnId
     }));
   }
   if (events.length > 0) {
     await client.ingest(events, project);
   }
-  if (hasFile && filePath && config3.capture.multimodal.copyFiles) {
+  if (hasFile && filePath && config2.capture.multimodal.copyFiles) {
     try {
-      const { spawn } = await import("child_process");
+      const { spawn } = await import("node:child_process");
       const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || "";
       let scriptPath = pluginRoot ? `${pluginRoot}/scripts/upload-file.sh` : "";
       if (!scriptPath) {
-        const { dirname } = await import("path");
+        const { dirname } = await import("node:path");
         const dir = dirname(new URL(import.meta.url).pathname);
         scriptPath = `${dir.replace("/src", "").replace("/dist", "")}/scripts/upload-file.sh`;
       }
-      const { existsSync: existsSync2 } = await import("fs");
+      const { existsSync: existsSync2 } = await import("node:fs");
       if (!existsSync2(scriptPath)) {
-        const { dirname } = await import("path");
+        const { dirname } = await import("node:path");
         const thisFile = process.argv[1] || "";
         const altPath = `${dirname(thisFile).replace("/dist", "").replace("/src", "")}/scripts/upload-file.sh`;
         if (existsSync2(altPath)) {
@@ -617,8 +617,8 @@ async function handleToolUse(stdin, client, config3, project, turnId) {
         const child = spawn("bash", [
           scriptPath,
           filePath,
-          config3.connection.endpoint,
-          config3.connection.apiKey || ""
+          config2.connection.endpoint,
+          config2.connection.apiKey || ""
         ], {
           detached: true,
           stdio: "ignore",
@@ -632,10 +632,10 @@ async function handleToolUse(stdin, client, config3, project, turnId) {
     }
   }
 }
-async function handleToolFailure(stdin, client, config3, project, turnId) {
-  if (!config3.capture.toolCalls)
+async function handleToolFailure(stdin, client, config2, project, turnId) {
+  if (!config2.capture.toolCalls)
     return;
-  if (config3.capture.exclude.tools.includes(stdin.tool_name))
+  if (config2.capture.exclude.tools.includes(stdin.tool_name))
     return;
   await client.ingest([
     buildEvent(stdin, "error", `Tool ${stdin.tool_name} failed: ${stdin.error}`, {
@@ -645,8 +645,8 @@ async function handleToolFailure(stdin, client, config3, project, turnId) {
     })
   ], project);
 }
-async function handleStop(stdin, client, config3, project, turnId, txInfo) {
-  if (!config3.capture.aiOutputs)
+async function handleStop(stdin, client, config2, project, turnId, txInfo) {
+  if (!config2.capture.aiOutputs)
     return;
   if (!stdin.last_assistant_message)
     return;
@@ -659,7 +659,7 @@ async function handleStop(stdin, client, config3, project, turnId, txInfo) {
   const events = [];
   let ingestProject = project;
   try {
-    const { readFileSync: readFileSync2, unlinkSync } = await import("fs");
+    const { readFileSync: readFileSync2, unlinkSync } = await import("node:fs");
     const pendingFile = `/tmp/claude-rag/pending-${stdin.session_id}.json`;
     const raw = readFileSync2(pendingFile, "utf-8");
     const pending = JSON.parse(raw);
@@ -679,8 +679,8 @@ async function handleStop(stdin, client, config3, project, turnId, txInfo) {
   events.push(aiEvent);
   await client.ingest(events, ingestProject);
 }
-async function handleSubagentStop(stdin, client, config3, project, turnId) {
-  if (!config3.capture.subAgents)
+async function handleSubagentStop(stdin, client, config2, project, turnId) {
+  if (!config2.capture.subAgents)
     return;
   if (!stdin.last_assistant_message)
     return;
@@ -691,19 +691,19 @@ async function handleSubagentStop(stdin, client, config3, project, turnId) {
     })
   ], project);
 }
-async function handleSessionStart(stdin, client, config3, project) {
-  if (!config3.connection.apiKey)
+async function handleSessionStart(stdin, client, config2, project) {
+  if (!config2.connection.apiKey)
     return;
-  if (config3.rag.mode === "auto" || config3.rag.mode === "aggressive") {
-    if (config3.rag.sessionStart.enabled) {
+  if (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") {
+    if (config2.rag.sessionStart.enabled) {
       try {
         const result = await client.search(`recent project context summary ${project}`, {
-          limit: config3.rag.sessionStart.maxItems,
-          threshold: config3.rag.threshold
+          limit: config2.rag.sessionStart.maxItems,
+          threshold: config2.rag.threshold
         });
         if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config3.rag.maxContextTokens);
-          const summary = `\x1B]8;;https://clauderag.io\x07\x1B[35mClaude RAG\x1B[0m\x1B]8;;\x07 \u2014 loaded \x1B[33m${result.results.length}\x1B[0m context${result.results.length > 1 ? "s" : ""} from \x1B[36m"${project}"\x1B[0m`;
+          const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
+          const summary = `\x1B]8;;https://clauderag.io\x07\x1B[35mClaude RAG\x1B[0m\x1B]8;;\x07 — loaded \x1B[33m${result.results.length}\x1B[0m context${result.results.length > 1 ? "s" : ""} from \x1B[36m"${project}"\x1B[0m`;
           process.stdout.write(JSON.stringify({
             additionalContext: context,
             systemMessage: summary
@@ -736,7 +736,7 @@ function buildEvent(stdin, contentType, content, extra) {
 async function readTranscriptInfo(transcriptPath) {
   const info = {};
   try {
-    const { statSync, openSync, readSync, closeSync } = await import("fs");
+    const { statSync, openSync, readSync, closeSync } = await import("node:fs");
     const stat = statSync(transcriptPath);
     if (stat.size === 0)
       return info;
@@ -797,10 +797,10 @@ var FILE_EXTENSIONS = new Set([
   "avi",
   "mov"
 ]);
-function isFileContent(toolName, filePath2) {
-  if (toolName !== "Read" || !filePath2)
+function isFileContent(toolName, filePath) {
+  if (toolName !== "Read" || !filePath)
     return false;
-  const ext = filePath2.split(".").pop()?.toLowerCase();
+  const ext = filePath.split(".").pop()?.toLowerCase();
   return ext ? FILE_EXTENSIONS.has(ext) : false;
 }
 async function readStdin() {
@@ -860,7 +860,7 @@ function formatResultsSummary(results, latencyMs) {
     ai_output: "\uD83E\uDD16",
     tool_call: "\uD83D\uDCE4",
     tool_result: "\uD83D\uDD27",
-    error: "\u274C"
+    error: "❌"
   };
   const topResults = results.slice(0, 3);
   const lines = topResults.map((r) => {
@@ -891,14 +891,14 @@ A: `)[1] || "";
       const aText = aPart.replace(/\s*\(\d+(?:\.\d+)?k? tokens\)$/, "").replace(/\.\.\.$/, "").replace(/\n/g, " ").trim();
       const aPreview = aText.slice(0, 60);
       const tokenDisplay = tokenStr ? ` ${C.dim}(${tokenStr} tokens)${C.reset}` : "";
-      return `  \uD83D\uDCAC ${C.yellow}${score}%${C.reset} \u2014 Q: ${C.white}${q}${C.reset}${toolLine}
+      return `  \uD83D\uDCAC ${C.yellow}${score}%${C.reset} — Q: ${C.white}${q}${C.reset}${toolLine}
      \uD83E\uDD16 A: ${C.green}${aPreview}${aText.length > 60 ? "..." : ""}${C.reset}${tokenDisplay}`;
     }
     const icon = icons[r.content_type] || "\uD83D\uDCC4";
     const tool = r.tool_name ? ` ${C.cyan}${r.tool_name}${C.reset}` : "";
     const sub = r.is_sub_agent ? ` ${C.dim}(sub-agent)${C.reset}` : "";
     const preview = content.replace(/\n/g, " ").slice(0, 80).trim();
-    return `  ${icon} ${C.yellow}${score}%${C.reset}${tool}${sub} \u2014 ${preview}`;
+    return `  ${icon} ${C.yellow}${score}%${C.reset}${tool}${sub} — ${preview}`;
   });
   const more = results.length > 3 ? `  ${C.dim}... +${results.length - 3} more${C.reset}` : "";
   const time = latencyMs ? ` ${C.dim}(${latencyMs}ms)${C.reset}` : "";

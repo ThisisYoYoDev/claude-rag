@@ -1,8 +1,19 @@
-# Claude RAG
+<p align="center">
+  <img src="assets/logo.svg" alt="Claude RAG" width="280">
+</p>
 
-> Never lose context. Ever.
+<p align="center">
+  <strong>Never lose context. Ever.</strong><br>
+  The first open source RAG plugin for <a href="https://claude.ai/code">Claude Code</a>.
+</p>
 
-The first open source RAG plugin for [Claude Code](https://claude.ai/code). Every conversation, tool call and AI response — indexed and searchable across all your sessions.
+<p align="center">
+  <a href="https://clauderag.io">Website</a> · <a href="#quick-start">Install</a> · <a href="#features">Features</a> · <a href="https://github.com/ThisisYoYoDev/claude-rag/issues">Issues</a>
+</p>
+
+---
+
+Every conversation, tool call and AI response — indexed and searchable across all your sessions.
 
 <p align="center">
   <img src="assets/demo.svg" alt="Claude RAG Demo" width="800">

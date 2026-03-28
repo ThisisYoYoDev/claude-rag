@@ -125,6 +125,8 @@ async function main(): Promise<void> {
     // Silently fail — never block Claude Code
   }
 
+  // Small delay to let detached child processes spawn before exit
+  await new Promise((r) => setTimeout(r, 50));
   process.exit(0);
 }
 

@@ -530,6 +530,7 @@ async function main() {
         break;
     }
   } catch {}
+  await new Promise((r) => setTimeout(r, 50));
   process.exit(0);
 }
 async function handleUserPrompt(stdin, client, config3, project, turnId) {

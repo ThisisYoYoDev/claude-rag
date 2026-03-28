@@ -137,13 +137,9 @@
     <!-- Claude response -->
     <g class="line l10">
       <text class="bullet" x="32" y="360">●</text>
-      <text class="resp" x="52" y="360">The auth bug was in</text>
-      <text class="code" x="240" y="360">src/auth/token.ts</text>
-      <text class="resp" x="400" y="360">. The</text>
-      <text class="code" x="440" y="360">TOKEN_EXPIRY</text>
-      <text class="resp" x="562" y="360">was set</text>
-      <text class="resp" x="52" y="384">to 3600 seconds (1 hour) instead of 86400 (24 hours).</text>
-      <text class="resp" x="52" y="408">I fixed it and all 14 tests pass now.</text>
+      <text class="resp" x="52" y="360">The auth bug was in src/auth/token.ts.</text>
+      <text class="resp" x="52" y="384">TOKEN_EXPIRY was set to 3600s (1 hour) instead</text>
+      <text class="resp" x="52" y="408">of 86400 (24 hours). Fixed it, all 14 tests pass.</text>
     </g>
   </g>
 </svg>

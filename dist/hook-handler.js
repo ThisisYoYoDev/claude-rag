@@ -738,17 +738,16 @@ async function handleSessionStart(stdin, client, config2, project) {
   const latestVersion = marketplace?.plugins?.find((p) => p.name === "claude-rag")?.version;
   const lines = [];
   let versionLine = `\x1B]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1B]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
-  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
-    versionLine += ` — ${C.yellow}update available: v${latestVersion}${C.reset}`;
-    versionLine += `
-  Run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
-  }
-  lines.push(versionLine);
   let additionalContext;
   if (search && search.results && search.results.length > 0) {
     additionalContext = formatResultsForClaude(search.results, config2.rag.maxContextTokens);
-    lines.push(`  Loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`);
+    versionLine += ` — loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
   }
+  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
+    versionLine += `
+  ${C.yellow}Update available: v${latestVersion}${C.reset} — run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
+  }
+  lines.push(versionLine);
   const output = {
     systemMessage: lines.join(`
 `)

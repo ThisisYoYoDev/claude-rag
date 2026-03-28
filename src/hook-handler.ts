@@ -423,19 +423,18 @@ async function handleSessionStart(
   // Version line
   let versionLine = `\x1b]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1b]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
 
-  // Check for update
-  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
-    versionLine += ` — ${C.yellow}update available: v${latestVersion}${C.reset}`;
-    versionLine += `\n  Run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
-  }
-  lines.push(versionLine);
-
-  // RAG context line
+  // RAG context on same line as version
   let additionalContext: string | undefined;
   if (search && search.results && search.results.length > 0) {
     additionalContext = formatResultsForClaude(search.results, config.rag.maxContextTokens);
-    lines.push(`  Loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`);
+    versionLine += ` — loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
   }
+
+  // Check for update (on new line if there's one)
+  if (latestVersion && latestVersion !== PLUGIN_VERSION) {
+    versionLine += `\n  ${C.yellow}Update available: v${latestVersion}${C.reset} — run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
+  }
+  lines.push(versionLine);
 
   const output: Record<string, unknown> = {
     systemMessage: lines.join("\n"),

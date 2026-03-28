@@ -142,6 +142,10 @@ RAG modes:
 - **Website**: [clauderag.io](https://clauderag.io)
 - **API**: [api.clauderag.io](https://api.clauderag.io/health)
 
+## Author
+
+Built by [Yoel Edery](https://www.linkedin.com/in/yoel-edery/)
+
 ## License
 
 MIT

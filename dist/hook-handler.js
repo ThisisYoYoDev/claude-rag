@@ -662,7 +662,7 @@ async function handleSessionStart(stdin, client, config2, project) {
         });
         if (result.results && result.results.length > 0) {
           const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
-          const summary = `Claude RAG \u2014 loaded ${result.results.length} context${result.results.length > 1 ? "s" : ""} from "${project}"`;
+          const summary = `\x1B]8;;https://clauderag.io\x07\x1B[35mClaude RAG\x1B[0m\x1B]8;;\x07 \u2014 loaded \x1B[33m${result.results.length}\x1B[0m context${result.results.length > 1 ? "s" : ""} from \x1B[36m"${project}"\x1B[0m`;
           process.stdout.write(JSON.stringify({
             additionalContext: context,
             systemMessage: summary
@@ -783,13 +783,14 @@ function formatResultsForClaude(results, maxTokens) {
 `;
   let tokens = 15;
   for (const r of results) {
-    const prefix = {
+    const prefixMap = {
       user_prompt: "Prompt",
       ai_output: "AI Response",
       tool_call: `Tool call: ${r.tool_name || "unknown"}`,
       tool_result: `Result: ${r.tool_name || "unknown"}`,
       error: "Error"
-    }[r.content_type] || r.content_type;
+    };
+    const prefix = prefixMap[r.content_type] || r.content_type;
     const entry = `- [${prefix}] (score: ${r.score.toFixed(2)}, project: ${r.project_name})
   ${r.content.slice(0, 500)}
 `;
@@ -803,6 +804,15 @@ function formatResultsForClaude(results, maxTokens) {
   return output;
 }
 function formatResultsSummary(results, latencyMs) {
+  const C = {
+    reset: "\x1B[0m",
+    yellow: "\x1B[33m",
+    cyan: "\x1B[36m",
+    purple: "\x1B[35m",
+    dim: "\x1B[2m",
+    white: "\x1B[37m",
+    green: "\x1B[32m"
+  };
   const icons = {
     user_prompt: "\uD83D\uDCAC",
     ai_output: "\uD83E\uDD16",
@@ -829,7 +839,7 @@ Tools: `);
         const tMatch = content.match(/Tools: (.+?)(?:\n|$)/);
         if (tMatch)
           toolLine = `
-     \uD83D\uDD27 ${tMatch[1]}`;
+     \uD83D\uDD27 ${C.cyan}${tMatch[1]}${C.reset}`;
       }
       const aPart = content.split(`
 
@@ -838,19 +848,19 @@ A: `)[1] || "";
       const tokenStr = tokenMatch ? tokenMatch[1] : "";
       const aText = aPart.replace(/\s*\(\d+(?:\.\d+)?k? tokens\)$/, "").replace(/\.\.\.$/, "").replace(/\n/g, " ").trim();
       const aPreview = aText.slice(0, 60);
-      const tokenDisplay = tokenStr ? ` (${tokenStr} tokens)` : "";
-      return `  \uD83D\uDCAC ${score}% \u2014 Q: ${q}${toolLine}
-     \uD83E\uDD16 A: ${aPreview}${aText.length > 60 ? "..." : ""}${tokenDisplay}`;
+      const tokenDisplay = tokenStr ? ` ${C.dim}(${tokenStr} tokens)${C.reset}` : "";
+      return `  \uD83D\uDCAC ${C.yellow}${score}%${C.reset} \u2014 Q: ${C.white}${q}${C.reset}${toolLine}
+     \uD83E\uDD16 A: ${C.green}${aPreview}${aText.length > 60 ? "..." : ""}${C.reset}${tokenDisplay}`;
     }
     const icon = icons[r.content_type] || "\uD83D\uDCC4";
-    const tool = r.tool_name ? ` ${r.tool_name}` : "";
-    const sub = r.is_sub_agent ? " (sub-agent)" : "";
+    const tool = r.tool_name ? ` ${C.cyan}${r.tool_name}${C.reset}` : "";
+    const sub = r.is_sub_agent ? ` ${C.dim}(sub-agent)${C.reset}` : "";
     const preview = content.replace(/\n/g, " ").slice(0, 80).trim();
-    return `  ${icon} ${score}%${tool}${sub} \u2014 ${preview}`;
+    return `  ${icon} ${C.yellow}${score}%${C.reset}${tool}${sub} \u2014 ${preview}`;
   });
-  const more = results.length > 3 ? `  ... +${results.length - 3} more` : "";
-  const time = latencyMs ? ` (${latencyMs}ms)` : "";
-  return `\uD83D\uDD0D RAG found ${results.length} match${results.length > 1 ? "es" : ""}${time}
+  const more = results.length > 3 ? `  ${C.dim}... +${results.length - 3} more${C.reset}` : "";
+  const time = latencyMs ? ` ${C.dim}(${latencyMs}ms)${C.reset}` : "";
+  return `\uD83D\uDD0D ${C.purple}RAG found ${results.length} match${results.length > 1 ? "es" : ""}${C.reset}${time}
 ${lines.join(`
 `)}${more ? `
 ` + more : ""}`;

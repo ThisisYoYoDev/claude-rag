@@ -353,7 +353,7 @@ async function handleSessionStart(
 
         if (result.results && result.results.length > 0) {
           const context = formatResultsForClaude(result.results, config.rag.maxContextTokens);
-          const summary = `Claude RAG — loaded ${result.results.length} context${result.results.length > 1 ? "s" : ""} from "${project}"`;
+          const summary = `\x1b]8;;https://clauderag.io\x07\x1b[35mClaude RAG\x1b[0m\x1b]8;;\x07 — loaded \x1b[33m${result.results.length}\x1b[0m context${result.results.length > 1 ? "s" : ""} from \x1b[36m"${project}"\x1b[0m`;
 
           process.stdout.write(
             JSON.stringify({
@@ -528,13 +528,14 @@ function formatResultsForClaude(results: any[], maxTokens: number): string {
   let tokens = 15;
 
   for (const r of results) {
-    const prefix = {
+    const prefixMap: Record<string, string> = {
       user_prompt: "Prompt",
       ai_output: "AI Response",
       tool_call: `Tool call: ${r.tool_name || "unknown"}`,
       tool_result: `Result: ${r.tool_name || "unknown"}`,
       error: "Error",
-    }[r.content_type] || r.content_type;
+    };
+    const prefix = prefixMap[r.content_type as string] || r.content_type;
 
     const entry = `- [${prefix}] (score: ${r.score.toFixed(2)}, project: ${r.project_name})\n  ${r.content.slice(0, 500)}\n`;
     const entryTokens = Math.ceil(entry.length / 4);
@@ -548,6 +549,17 @@ function formatResultsForClaude(results: any[], maxTokens: number): string {
 
 /** Format a visible summary for the user (shown as system message in conversation) */
 function formatResultsSummary(results: any[], latencyMs?: number): string {
+  // ANSI color codes
+  const C = {
+    reset: "\x1b[0m",
+    yellow: "\x1b[33m",      // scores
+    cyan: "\x1b[36m",        // tools
+    purple: "\x1b[35m",      // RAG header
+    dim: "\x1b[2m",          // dim text (tokens, more)
+    white: "\x1b[37m",       // questions
+    green: "\x1b[32m",       // answers
+  };
+
   const icons: Record<string, string> = {
     user_prompt: "💬",
     ai_output: "🤖",
@@ -573,34 +585,32 @@ function formatResultsSummary(results: any[], latencyMs?: number): string {
       let toolLine = "";
       if (hasTools) {
         const tMatch = content.match(/Tools: (.+?)(?:\n|$)/);
-        if (tMatch) toolLine = `\n     🔧 ${tMatch[1]}`;
+        if (tMatch) toolLine = `\n     🔧 ${C.cyan}${tMatch[1]}${C.reset}`;
       }
 
-      // Extract the token info from backend format: "A: preview... (247 tokens)" or "(3.2k tokens)"
       const aPart = content.split("\n\nA: ")[1] || "";
       const tokenMatch = aPart.match(/\((\d+(?:\.\d+)?k?) tokens\)/);
       const tokenStr = tokenMatch ? tokenMatch[1] : "";
 
-      // Get preview text (before the token count)
       const aText = aPart.replace(/\s*\(\d+(?:\.\d+)?k? tokens\)$/, "").replace(/\.\.\.$/, "").replace(/\n/g, " ").trim();
       const aPreview = aText.slice(0, 60);
-      const tokenDisplay = tokenStr ? ` (${tokenStr} tokens)` : "";
+      const tokenDisplay = tokenStr ? ` ${C.dim}(${tokenStr} tokens)${C.reset}` : "";
 
-      return `  💬 ${score}% — Q: ${q}${toolLine}\n     🤖 A: ${aPreview}${aText.length > 60 ? "..." : ""}${tokenDisplay}`;
+      return `  💬 ${C.yellow}${score}%${C.reset} — Q: ${C.white}${q}${C.reset}${toolLine}\n     🤖 A: ${C.green}${aPreview}${aText.length > 60 ? "..." : ""}${C.reset}${tokenDisplay}`;
     }
 
     // Regular format (no turn)
     const icon = icons[r.content_type] || "📄";
-    const tool = r.tool_name ? ` ${r.tool_name}` : "";
-    const sub = r.is_sub_agent ? " (sub-agent)" : "";
+    const tool = r.tool_name ? ` ${C.cyan}${r.tool_name}${C.reset}` : "";
+    const sub = r.is_sub_agent ? ` ${C.dim}(sub-agent)${C.reset}` : "";
     const preview = content.replace(/\n/g, " ").slice(0, 80).trim();
-    return `  ${icon} ${score}%${tool}${sub} — ${preview}`;
+    return `  ${icon} ${C.yellow}${score}%${C.reset}${tool}${sub} — ${preview}`;
   });
 
-  const more = results.length > 3 ? `  ... +${results.length - 3} more` : "";
-  const time = latencyMs ? ` (${latencyMs}ms)` : "";
+  const more = results.length > 3 ? `  ${C.dim}... +${results.length - 3} more${C.reset}` : "";
+  const time = latencyMs ? ` ${C.dim}(${latencyMs}ms)${C.reset}` : "";
 
-  return `🔍 RAG found ${results.length} match${results.length > 1 ? "es" : ""}${time}\n${lines.join("\n")}${more ? "\n" + more : ""}`;
+  return `🔍 ${C.purple}RAG found ${results.length} match${results.length > 1 ? "es" : ""}${C.reset}${time}\n${lines.join("\n")}${more ? "\n" + more : ""}`;
 }
 
 // Run

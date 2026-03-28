@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Never lose context. Ever.</strong><br>
-  The first open source RAG plugin for <a href="https://claude.ai/code">Claude Code</a>.
+  The first open source RAG plugin for <a href="https://claude.com/product/claude-code">Claude Code</a>.
 </p>
 
 <p align="center">

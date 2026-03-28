@@ -370,7 +370,7 @@ var DEFAULT_CONFIG = {
   rag: {
     mode: "auto",
     threshold: 0.6,
-    maxContextTokens: 2000,
+    maxContextTokens: 5000,
     perPrompt: {
       enabled: true,
       maxItems: 5,

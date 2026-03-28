@@ -27,7 +27,7 @@ cat > "$CONFIG_FILE" << CONF
     "exclude": {"tools": ["AskUserQuestion"], "pathPatterns": []}
   },
   "rag": {
-    "mode": "auto", "threshold": 0.6, "maxContextTokens": 2000,
+    "mode": "auto", "threshold": 0.6, "maxContextTokens": 5000,
     "perPrompt": {"enabled": true, "maxItems": 5, "maxLatencyMs": 500},
     "sessionStart": {"enabled": true, "maxItems": 3}
   },

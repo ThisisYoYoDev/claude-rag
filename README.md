@@ -139,7 +139,7 @@ Config file: `~/.claude/plugins/claude-rag/config.json`
 {
   "connection": { "endpoint": "https://api.clauderag.io", "apiKey": "cr_sk_..." },
   "capture": { "enabled": true, "userPrompts": true, "aiOutputs": true, "toolCalls": true, "toolResults": true, "subAgents": true },
-  "rag": { "mode": "auto", "threshold": 0.6, "maxContextTokens": 2000 }
+  "rag": { "mode": "auto", "threshold": 0.6, "maxContextTokens": 5000 }
 }
 ```
 
@@ -148,6 +148,18 @@ RAG modes:
 - `manual` — only via /claude-rag:search
 - `auto` — inject on every prompt (recommended)
 - `aggressive` — auto + Claude can search on its own
+
+### Recommended `maxContextTokens`
+
+| Context window | Recommended | % of window | Results per query |
+|---------------|-------------|-------------|-------------------|
+| **200k** | `5000` (default) | 2.5% | 3-5 full turns |
+| **200k** | `8000` | 4% | 5-8 full turns |
+| **1M** | `5000` (default) | 0.5% | 3-5 full turns |
+| **1M** | `15000` | 1.5% | 10-15 full turns |
+| **1M** | `30000` | 3% | 20+ full turns |
+
+> **Tip**: With a 1M context window (available on both Sonnet and Opus), you can safely increase `maxContextTokens` to 15000-30000 for richer context without noticeable impact on your conversation. A "turn" is a Q + Tools + A group (~500-1500 tokens each).
 
 ## Privacy
 

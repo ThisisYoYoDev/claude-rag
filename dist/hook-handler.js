@@ -577,25 +577,63 @@ async function handleToolUse(stdin, client, config3, project, turnId) {
   }
   if (config3.capture.toolResults) {
     const content = typeof stdin.tool_response === "string" ? stdin.tool_response : JSON.stringify(stdin.tool_response);
-    const filePath = stdin.tool_input?.file_path;
-    const hasFile = isFileContent(stdin.tool_name, filePath);
-    let storageKey;
-    if (hasFile && filePath && config3.capture.multimodal.copyFiles) {
-      try {
-        storageKey = await uploadFileToS3(client, filePath);
-      } catch {}
-    }
+    const filePath2 = stdin.tool_input?.file_path;
+    const hasFile2 = isFileContent(stdin.tool_name, filePath2);
     events.push(buildEvent(stdin, "tool_result", content, {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
-      has_file: hasFile,
-      file_path: filePath,
-      storageKey,
+      has_file: hasFile2,
+      file_path: filePath2,
       turnId
     }));
   }
   if (events.length > 0) {
     await client.ingest(events, project);
+  }
+  if (hasFile && filePath && config3.capture.multimodal.copyFiles) {
+    try {
+      const { spawn } = await import("child_process");
+      const endpoint = config3.connection.endpoint;
+      const apiKey = config3.connection.apiKey || "";
+      const child = spawn("sh", ["-c", `
+        BUN=$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")
+        "$BUN" -e "
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const filePath = '${filePath.replace(/'/g, "\\'")}';
+          const endpoint = '${endpoint}';
+          const apiKey = '${apiKey}';
+
+          async function upload() {
+            const stat = fs.statSync(filePath);
+            if (stat.size > 50 * 1024 * 1024) return; // skip > 50MB
+
+            const filename = path.basename(filePath);
+            const ext = filename.split('.').pop()?.toLowerCase() || '';
+            const mimeMap = {png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',pdf:'application/pdf',mp3:'audio/mp3',wav:'audio/wav',mp4:'video/mp4',webm:'video/webm'};
+            const contentType = mimeMap[ext] || 'application/octet-stream';
+            const category = ['png','jpg','jpeg','gif','svg','webp'].includes(ext)?'image':ext==='pdf'?'pdf':['mp3','wav','ogg'].includes(ext)?'audio':['mp4','webm','mov'].includes(ext)?'video':'other';
+
+            const presignRes = await fetch(endpoint+'/api/v1/upload/presign', {
+              method:'POST',
+              headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+              body:JSON.stringify({filename,contentType,category})
+            });
+            if (!presignRes.ok) return;
+            const presign = await presignRes.json();
+
+            const fileData = fs.readFileSync(filePath);
+            await fetch(presign.upload_url, {method:'PUT',headers:{'Content-Type':contentType},body:fileData});
+          }
+          upload().catch(()=>{});
+        "
+      `], {
+        detached: true,
+        stdio: "ignore"
+      });
+      child.unref();
+    } catch {}
   }
 }
 async function handleToolFailure(stdin, client, config3, project, turnId) {
@@ -739,54 +777,6 @@ async function readTranscriptInfo(transcriptPath) {
   } catch {}
   return info;
 }
-async function uploadFileToS3(client, filePath) {
-  const { readFileSync: readFileSync2, statSync } = await import("fs");
-  const { basename } = await import("path");
-  const stat = statSync(filePath);
-  if (stat.size > 52428800)
-    throw new Error("File too large");
-  const filename = basename(filePath);
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  const mimeMap = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    svg: "image/svg+xml",
-    webp: "image/webp",
-    pdf: "application/pdf",
-    mp3: "audio/mp3",
-    wav: "audio/wav",
-    ogg: "audio/ogg",
-    mp4: "video/mp4",
-    webm: "video/webm",
-    mov: "video/quicktime"
-  };
-  const contentType = mimeMap[ext] || "application/octet-stream";
-  const category = ["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext) ? "image" : ext === "pdf" ? "pdf" : ["mp3", "wav", "ogg"].includes(ext) ? "audio" : ["mp4", "webm", "mov"].includes(ext) ? "video" : "other";
-  const endpoint = config.connection.endpoint;
-  const apiKey = config.connection.apiKey;
-  const presignRes = await fetch(`${endpoint}/api/v1/upload/presign`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
-    },
-    body: JSON.stringify({ filename, contentType, category })
-  });
-  if (!presignRes.ok)
-    throw new Error(`Presign failed: ${presignRes.status}`);
-  const presign = await presignRes.json();
-  const fileData = readFileSync2(filePath);
-  const uploadRes = await fetch(presign.upload_url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: fileData
-  });
-  if (!uploadRes.ok)
-    throw new Error(`S3 upload failed: ${uploadRes.status}`);
-  return presign.key;
-}
 function detectProject(cwd) {
   if (!cwd)
     return "unknown";
@@ -811,10 +801,10 @@ var FILE_EXTENSIONS = new Set([
   "avi",
   "mov"
 ]);
-function isFileContent(toolName, filePath) {
-  if (toolName !== "Read" || !filePath)
+function isFileContent(toolName, filePath2) {
+  if (toolName !== "Read" || !filePath2)
     return false;
-  const ext = filePath.split(".").pop()?.toLowerCase();
+  const ext = filePath2.split(".").pop()?.toLowerCase();
   return ext ? FILE_EXTENSIONS.has(ext) : false;
 }
 async function readStdin() {

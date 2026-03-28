@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://clauderag.io">Website</a> · <a href="#quick-start">Install</a> · <a href="#features">Features</a> · <a href="https://github.com/ThisisYoYoDev/claude-rag/issues">Issues</a>
+  <a href="https://clauderag.io">Website</a> · <a href="#installation">Install</a> · <a href="#features">Features</a> · <a href="https://github.com/ThisisYoYoDev/claude-rag/issues">Issues</a>
 </p>
 
 ---

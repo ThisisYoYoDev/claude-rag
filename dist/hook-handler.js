@@ -741,7 +741,7 @@ async function handleSessionStart(stdin, client, config2, project) {
   if (latestVersion && latestVersion !== PLUGIN_VERSION) {
     versionLine += ` — ${C.yellow}update available: v${latestVersion}${C.reset}`;
     versionLine += `
-  Run: ${C.cyan}claude plugin update claude-rag${C.reset}`;
+  Run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
   }
   lines.push(versionLine);
   let additionalContext;

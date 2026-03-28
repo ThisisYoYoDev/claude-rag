@@ -426,7 +426,7 @@ async function handleSessionStart(
   // Check for update
   if (latestVersion && latestVersion !== PLUGIN_VERSION) {
     versionLine += ` — ${C.yellow}update available: v${latestVersion}${C.reset}`;
-    versionLine += `\n  Run: ${C.cyan}claude plugin update claude-rag${C.reset}`;
+    versionLine += `\n  Run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
   }
   lines.push(versionLine);
 

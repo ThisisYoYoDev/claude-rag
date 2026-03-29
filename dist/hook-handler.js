@@ -868,7 +868,7 @@ async function handleSessionStart(stdin, client, config2, project) {
   };
   const marketplaceUrl = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
   const [marketplaceResult, searchResult, continuationResult] = await Promise.allSettled([
-    fetch(marketplaceUrl, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+    fetch(`${marketplaceUrl}?_=${Date.now()}`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     config2.rag.sessionStart.enabled && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") ? client.search(`recent project context summary ${project}`, {
       limit: config2.rag.sessionStart.maxItems,
       threshold: config2.rag.threshold

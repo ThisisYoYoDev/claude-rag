@@ -439,7 +439,7 @@ async function handleSessionStart(
   // Check marketplace + RAG search + continuation in parallel
   const marketplaceUrl = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
   const [marketplaceResult, searchResult, continuationResult] = await Promise.allSettled([
-    fetch(marketplaceUrl, { signal: AbortSignal.timeout(3000) })
+    fetch(`${marketplaceUrl}?_=${Date.now()}`, { signal: AbortSignal.timeout(3000) })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null),
     config.rag.sessionStart.enabled &&

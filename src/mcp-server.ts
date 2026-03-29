@@ -13,9 +13,11 @@ const client = new RagApiClient({
   timeoutMs: 10000,
 });
 
+import pkg from "../package.json";
+
 const server = new McpServer({
   name: "claude-rag",
-  version: "0.1.0",
+  version: pkg.version,
 });
 
 // ==========================================
@@ -108,22 +110,726 @@ server.registerTool(
       };
     }
 
+    // Compact mode: ~30 tokens/result with event_id for progressive disclosure
     const lines = result.results.map((r: any, i: number) => {
       const icon =
         { user_prompt: "💬", ai_output: "🤖", tool_call: "📤", tool_result: "🔧", error: "❌" }[
           r.content_type
         ] || "📄";
-      const sub = r.is_sub_agent ? ` [${r.agent_type}]` : "";
-      const tool = r.tool_name ? ` (${r.tool_name})` : "";
-      const preview = r.content.slice(0, 300).replace(/\n/g, " ");
-      return `${i + 1}. ${icon} **${r.content_type}**${tool}${sub} — score: ${(r.score * 100).toFixed(0)}% — ${r.project_name}\n   ${preview}`;
+      const score = (r.score * 100).toFixed(0);
+      const tool = r.tool_name ? ` ${r.tool_name}` : "";
+      const sub = r.is_sub_agent ? ` [sub]` : "";
+      const turnTag = r.turn_id ? ` turn:${r.turn_id.slice(0, 8)}` : "";
+      const preview = r.content.replace(/\n/g, " ").slice(0, 80).trim();
+      return `${i + 1}. ${icon} ${score}%${tool}${sub} | ${r.project_name} | ${preview}… [id:${r.event_id}${turnTag}]`;
     });
 
-    const text = `Found ${result.total} results in ${result.latency_ms}ms:\n\n${lines.join("\n\n")}`;
+    const text = [
+      `Found ${result.total} results in ${result.latency_ms}ms:`,
+      "",
+      ...lines,
+      "",
+      "Use `detail` with event IDs or `turn` with turn IDs to get full content.",
+    ].join("\n");
 
     return { content: [{ type: "text" as const, text }] };
   }
 );
+
+// ==========================================
+// Tool: detail (Layer 2 — full event content)
+// ==========================================
+
+server.registerTool(
+  "detail",
+  {
+    title: "Event Detail",
+    description:
+      "Fetch full content of specific events by their IDs. Use after `search` to expand results you're interested in. Max 20 IDs per call.",
+    inputSchema: z.object({
+      event_ids: z
+        .array(z.string())
+        .min(1)
+        .max(20)
+        .describe("Event IDs from search results (the [id:xxx] values)"),
+    }),
+  },
+  async (args) => {
+    const result = await client.getEvents(args.event_ids);
+
+    if (!result.events?.length) {
+      return { content: [{ type: "text" as const, text: "No events found for the given IDs." }] };
+    }
+
+    const lines = result.events.map((e: any) => {
+      const icon =
+        { user_prompt: "💬", ai_output: "🤖", tool_call: "📤", tool_result: "🔧", error: "❌" }[
+          e.content_type
+        ] || "📄";
+      const tool = e.tool_name ? ` [${e.tool_name}]` : "";
+      const lang = e.language ? ` (${e.language})` : "";
+      const tokens = e.token_count ? ` — ${e.token_count} tokens` : "";
+      return `### ${icon} ${e.content_type}${tool}${lang}${tokens}\n**Project:** ${e.project_name} | **Turn:** ${e.turn_id || "n/a"} | **Date:** ${e.created_at}\n\n${e.content}`;
+    });
+
+    return { content: [{ type: "text" as const, text: lines.join("\n\n---\n\n") }] };
+  }
+);
+
+// ==========================================
+// Tool: turn (Layer 3 — full Q+Tools+A turn)
+// ==========================================
+
+server.registerTool(
+  "turn",
+  {
+    title: "Full Turn",
+    description:
+      "Fetch a complete conversation turn (Question + Tool calls + Answer) by turn_id. Use after `search` to see the full Q&A exchange.",
+    inputSchema: z.object({
+      turn_id: z
+        .string()
+        .describe("Turn ID from search results (the turn:xxx value)"),
+    }),
+  },
+  async (args) => {
+    const result = await client.getTurn(args.turn_id);
+
+    if (!result.turn) {
+      return { content: [{ type: "text" as const, text: "Turn not found." }] };
+    }
+
+    const { turn } = result;
+    const lines: string[] = [];
+
+    lines.push(`## Turn — ${turn.project_name}`);
+    if (turn.summary.question) {
+      lines.push(`\n**Question:** ${turn.summary.question}`);
+    }
+    if (turn.summary.tools_used?.length) {
+      lines.push(`**Tools:** ${turn.summary.tools_used.join(", ")}`);
+    }
+    if (turn.summary.total_tokens) {
+      lines.push(`**Tokens:** ${turn.summary.total_tokens}`);
+    }
+
+    lines.push("\n---\n");
+
+    for (const e of turn.events) {
+      const icon =
+        { user_prompt: "💬", ai_output: "🤖", tool_call: "📤", tool_result: "🔧", error: "❌" }[
+          e.content_type
+        ] || "📄";
+      const tool = e.tool_name ? ` [${e.tool_name}]` : "";
+      lines.push(`### ${icon} ${e.content_type}${tool}\n${e.content}\n`);
+    }
+
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  }
+);
+
+// ==========================================
+// Tool: timeline (session replay)
+// ==========================================
+
+server.registerTool(
+  "timeline",
+  {
+    title: "Session Timeline",
+    description:
+      "Browse turns in a session chronologically. Shows Q&A summaries with tool usage. Use with browse_sessions to find session IDs first.",
+    inputSchema: z.object({
+      session_id: z.string().describe("Session ID to browse"),
+      limit: z.number().min(1).max(50).default(15).describe("Number of turns to show"),
+      cursor: z.string().optional().describe("Pagination cursor (ISO date) from previous response"),
+      direction: z.enum(["asc", "desc"]).default("desc").describe("Sort order: newest first (desc) or oldest first (asc)"),
+    }),
+  },
+  async (args) => {
+    const result = await client.getTimeline(args.session_id, {
+      limit: args.limit,
+      cursor: args.cursor,
+      direction: args.direction,
+    });
+
+    if (!result.session) {
+      return { content: [{ type: "text" as const, text: "Session not found." }] };
+    }
+
+    const lines: string[] = [];
+    lines.push(`## Timeline: ${result.session.display_name || result.session.id.slice(0, 8)}`);
+    lines.push(`**Project:** ${result.session.project_name} | **Started:** ${result.session.created_at}\n`);
+
+    for (const t of result.turns) {
+      if (t.turn_id) {
+        const tools = t.tools?.length ? ` | Tools: ${t.tools.join(", ")} (${t.tool_count})` : "";
+        const tokens = t.tokens?.output ? ` | ${t.tokens.output} tokens` : "";
+        const q = t.question ? t.question.slice(0, 80) : "...";
+        const a = t.answer_preview ? t.answer_preview.slice(0, 80) : "...";
+        lines.push(`- 💬 **Q:** ${q}`);
+        lines.push(`  🤖 **A:** ${a}${tools}${tokens}`);
+        lines.push(`  _${t.event_count} events | turn:${t.turn_id.slice(0, 8)} | ${t.timestamp}_`);
+      } else {
+        const icon =
+          { user_prompt: "💬", ai_output: "🤖", tool_call: "📤", tool_result: "🔧" }[
+            t.content_type || ""
+          ] || "📄";
+        lines.push(`- ${icon} ${t.content_type}${t.tool_name ? ` [${t.tool_name}]` : ""}: ${(t.preview || "").slice(0, 80)}`);
+        lines.push(`  _${t.timestamp} | id:${t.event_id}_`);
+      }
+      lines.push("");
+    }
+
+    if (result.has_more) {
+      lines.push(`_More results available. Use cursor: "${result.next_cursor}"_`);
+    }
+
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  }
+);
+
+// ==========================================
+// Tool: code_search (semantic code search)
+// ==========================================
+
+server.registerTool(
+  "code_search",
+  {
+    title: "Code Search",
+    description:
+      "Semantic search specifically in code: tool results, edits, reads. Filter by programming language or file path pattern. Better than grep — finds semantically similar code across all sessions.",
+    inputSchema: z.object({
+      query: z.string().describe("What to search for in code (natural language or code snippet)"),
+      language: z
+        .string()
+        .optional()
+        .describe("Filter by language: typescript, python, rust, go, etc."),
+      file_pattern: z
+        .string()
+        .optional()
+        .describe("Filter by file path pattern (e.g. 'auth', 'middleware', 'test')"),
+      limit: z.number().min(1).max(30).default(10).describe("Max results"),
+      threshold: z.number().min(0).max(1).default(0.5).describe("Min relevance score"),
+    }),
+  },
+  async (args) => {
+    // Build filters for code-only search
+    const filters: any = {
+      content_types: ["tool_call", "tool_result"],
+      tool_names: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"],
+    };
+    if (args.language) {
+      filters.languages = [args.language];
+    }
+
+    // Append file pattern to query for better semantic matching
+    const query = args.file_pattern
+      ? `${args.query} file:${args.file_pattern}`
+      : args.query;
+
+    const result = await client.search(query, {
+      limit: args.limit,
+      threshold: args.threshold,
+      filters,
+    });
+
+    if (result.results.length === 0) {
+      return { content: [{ type: "text" as const, text: `No code found for "${args.query}". Try a broader query or lower threshold.` }] };
+    }
+
+    const lines = result.results.map((r: any, i: number) => {
+      const tool = r.tool_name || "code";
+      const lang = r.language ? ` (${r.language})` : "";
+      const score = (r.score * 100).toFixed(0);
+      const preview = r.content.replace(/\n/g, " ").slice(0, 100).trim();
+      return `${i + 1}. 🔧 ${score}% ${tool}${lang} | ${r.project_name} | ${preview}… [id:${r.event_id}]`;
+    });
+
+    const text = [
+      `Code search: ${result.total} results in ${result.latency_ms}ms:`,
+      "",
+      ...lines,
+      "",
+      "Use `detail` with event IDs to see full code content.",
+    ].join("\n");
+
+    return { content: [{ type: "text" as const, text }] };
+  }
+);
+
+// ==========================================
+// Tool: code_history (file history across sessions)
+// ==========================================
+
+server.registerTool(
+  "code_history",
+  {
+    title: "Code History",
+    description:
+      "Find all past interactions with a specific file across all sessions: reads, edits, errors, discussions. Shows how the file evolved over time.",
+    inputSchema: z.object({
+      file_path: z.string().describe("File path or partial path (e.g. 'src/auth.ts', 'middleware')"),
+      limit: z.number().min(1).max(30).default(15).describe("Max results"),
+    }),
+  },
+  async (args) => {
+    const result = await client.search(`file ${args.file_path}`, {
+      limit: args.limit,
+      threshold: 0.3,
+      filters: {
+        content_types: ["tool_call", "tool_result", "error"],
+        tool_names: ["Read", "Edit", "Write", "Bash"],
+      },
+    });
+
+    if (result.results.length === 0) {
+      return { content: [{ type: "text" as const, text: `No history found for "${args.file_path}".` }] };
+    }
+
+    const lines = result.results.map((r: any, i: number) => {
+      const tool = r.tool_name || "?";
+      const action = tool === "Read" ? "📖 read" : tool === "Edit" ? "✏️ edit" : tool === "Write" ? "📝 write" : tool === "Bash" ? "⚡ run" : `🔧 ${tool}`;
+      const date = new Date(r.created_at).toLocaleDateString();
+      const preview = r.content.replace(/\n/g, " ").slice(0, 80).trim();
+      return `${i + 1}. ${action} | ${date} | ${r.project_name} | ${preview}… [id:${r.event_id}]`;
+    });
+
+    const text = [
+      `History for "${args.file_path}" — ${result.total} interactions:`,
+      "",
+      ...lines,
+      "",
+      "Use `detail` with event IDs to see full content.",
+    ].join("\n");
+
+    return { content: [{ type: "text" as const, text }] };
+  }
+);
+
+// ==========================================
+// Tool: productivity
+// ==========================================
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
+server.registerTool(
+  "productivity",
+  {
+    title: "Productivity Metrics",
+    description:
+      "Personal developer productivity metrics: sessions, tokens, tools used, files touched, activity patterns, error rates. Like WakaTime but for AI-assisted coding.",
+    inputSchema: z.object({
+      period: z.enum(["day", "week", "month"]).default("week").describe("Time period"),
+      project_id: z.string().optional().describe("Filter by project ID"),
+    }),
+  },
+  async (args) => {
+    try {
+      const d = await client.getProductivity(args.period, args.project_id);
+
+      const lines: string[] = [];
+      lines.push(`## Productivity Report (last ${d.period || args.period})`);
+      lines.push(`_${d.date_from} → ${d.date_to}_\n`);
+
+      // Sessions
+      lines.push(`### Sessions`);
+      lines.push(`**${d.sessions.count}** sessions, **${d.sessions.total_duration_minutes}** min total (avg ${d.sessions.avg_duration_minutes} min)\n`);
+
+      // Tokens
+      lines.push(`### Tokens`);
+      lines.push(`**${d.tokens.formatted}** total (${formatNumber(d.tokens.input)} in, ${formatNumber(d.tokens.output)} out)\n`);
+
+      // Tools
+      if (d.tools.total_calls > 0) {
+        lines.push(`### Tools (${d.tools.total_calls} calls)`);
+        const toolEntries = Object.entries(d.tools.by_name as Record<string, number>)
+          .sort(([, a], [, b]) => b - a);
+        lines.push(toolEntries.map(([name, count]) => `**${name}** (${count})`).join(", "));
+        lines.push("");
+      }
+
+      // Top Files
+      if (d.files.top_10?.length > 0) {
+        lines.push(`### Top Files (${d.files.unique_count} unique)`);
+        for (const f of d.files.top_10) {
+          // Shorten absolute paths
+          const short = (f.path as string).replace(/.*\/([^/]+\/[^/]+\/[^/]+)$/, "$1");
+          lines.push(`- **${short}** — ${f.interactions}x`);
+        }
+        lines.push("");
+      }
+
+      // Languages
+      if (d.languages?.by_name) {
+        const langEntries = Object.entries(d.languages.by_name as Record<string, number>)
+          .sort(([, a], [, b]) => b - a);
+        if (langEntries.length > 0) {
+          lines.push(`### Languages`);
+          lines.push(langEntries.map(([lang, count]) => `${lang} (${count})`).join(", "));
+          lines.push("");
+        }
+      }
+
+      // Activity
+      lines.push(`### Activity`);
+      const hour = String(d.activity.most_active_hour).padStart(2, "0") + ":00";
+      lines.push(`Peak hour: **${hour}** | Peak day: **${d.activity.most_active_day}**`);
+      // Sparkline-style hour chart
+      const maxH = Math.max(...d.activity.by_hour, 1);
+      const bars = d.activity.by_hour.map((h: number) => {
+        const level = Math.round((h / maxH) * 4);
+        return ["·", "▁", "▂", "▃", "▄"][level] || "▄";
+      }).join("");
+      lines.push(`\`${bars}\` (0h → 23h)`);
+      lines.push("");
+
+      // Turns
+      lines.push(`### Turns`);
+      lines.push(`**${d.turns.count}** turns (avg ${d.turns.avg_per_session}/session)\n`);
+
+      // Errors
+      lines.push(`### Errors`);
+      const ratePercent = (d.errors.rate * 100).toFixed(1);
+      lines.push(`**${d.errors.count}** errors (${ratePercent}% rate)`);
+
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    } catch (err) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Failed to fetch productivity metrics: ${err instanceof Error ? err.message : "Unknown error"}`,
+        }],
+      };
+    }
+  }
+);
+
+// ==========================================
+// Tool: knowledge
+// ==========================================
+
+server.registerTool(
+  "knowledge",
+  {
+    title: "Project Knowledge Base",
+    description:
+      "Search the accumulated knowledge about your project: past explanations, architectural decisions, debugging sessions, setup guides. Answers questions like 'how does the auth system work?' from past conversations.",
+    inputSchema: z.object({
+      query: z.string().describe("What do you want to know? Natural language question about the project."),
+      scope: z.enum(["all", "decisions", "explanations", "debugging", "setup"]).default("all").describe("Filter by knowledge type"),
+      project_id: z.string().optional().describe("Filter by project"),
+      limit: z.number().min(1).max(20).default(5).describe("Max results"),
+    }),
+  },
+  async (args) => {
+    // Build smart filters based on scope
+    const filters: any = {};
+    let query = args.query;
+
+    switch (args.scope) {
+      case "decisions":
+        query = `${args.query} because chose decided tradeoff`;
+        filters.content_types = ["user_prompt", "ai_output"];
+        break;
+      case "explanations":
+        filters.content_types = ["ai_output"];
+        break;
+      case "debugging":
+        filters.content_types = ["error", "tool_result"];
+        filters.tool_names = ["Bash"];
+        break;
+      case "setup":
+        query = `${args.query} setup install configure`;
+        break;
+      // "all" — no content_type filter
+    }
+
+    if (args.project_id) {
+      filters.project_id = args.project_id;
+    }
+
+    const result = await client.search(query, {
+      limit: args.limit,
+      threshold: 0.4,
+      filters,
+    });
+
+    if (result.results.length === 0) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: `No knowledge found for "${args.query}" (scope: ${args.scope}). Try broadening the query or changing the scope to "all".`,
+        }],
+      };
+    }
+
+    const lines: string[] = [];
+    lines.push(`## Knowledge Base: "${args.query}"`);
+    lines.push(`_Scope: ${args.scope} | ${result.total} results_\n`);
+
+    for (const [i, r] of (result.results as any[]).entries()) {
+      const score = (r.score * 100).toFixed(0);
+      const date = new Date(r.created_at).toLocaleDateString();
+      const icon =
+        { user_prompt: "\u{1F4AC}", ai_output: "\u{1F916}", tool_call: "\u{1F4E4}", tool_result: "\u{1F527}", error: "\u274C" }[
+          r.content_type as string
+        ] || "\u{1F4C4}";
+      const preview = r.content.replace(/\n/g, " ").slice(0, 200).trim();
+      lines.push(`### ${i + 1}. ${icon} ${r.content_type} — ${score}% match`);
+      lines.push(`**Project:** ${r.project_name} | **Date:** ${date}`);
+      lines.push(`${preview}...`);
+      lines.push(`_[id:${r.event_id}]_\n`);
+    }
+
+    lines.push("Use `detail` with event IDs to read full content.");
+
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  }
+);
+
+// ==========================================
+// Tool: onboard
+// ==========================================
+
+server.registerTool(
+  "onboard",
+  {
+    title: "Project Onboarding Guide",
+    description:
+      "Generate a project overview from accumulated session history: architecture, key files, common tasks, past gotchas, tech stack. Great for getting up to speed on a project.",
+    inputSchema: z.object({
+      project_id: z.string().optional().describe("Project ID. If not specified, uses current project."),
+    }),
+  },
+  async (args) => {
+    try {
+      const headers: Record<string, string> = {};
+      if (config.connection.apiKey)
+        headers["Authorization"] = `Bearer ${config.connection.apiKey}`;
+
+      // 1. Get stats for overall context
+      const statsRes = await fetch(`${config.connection.endpoint}/api/v1/stats`, { headers });
+      const stats = (await statsRes.json()) as any;
+
+      // Determine project info
+      let projectName = "Unknown";
+      let projectInfo: any = null;
+      if (args.project_id) {
+        const projArr = stats.by_project || [];
+        projectInfo = projArr.find((p: any) => p.id === args.project_id);
+        if (projectInfo) projectName = projectInfo.name;
+      } else if (stats.by_project?.length) {
+        // Use the project with the most events
+        projectInfo = stats.by_project.reduce((a: any, b: any) =>
+          (a.event_count || 0) > (b.event_count || 0) ? a : b
+        );
+        projectName = projectInfo.name;
+      }
+
+      const filters: any = {};
+      if (args.project_id) filters.project_id = args.project_id;
+
+      // 2. Search for architecture/setup content
+      const archResults = await client.search("architecture setup configuration structure", {
+        limit: 5,
+        threshold: 0.3,
+        filters: { ...filters, content_types: ["ai_output"] },
+      });
+
+      // 3. Search for common errors
+      const errorResults = await client.search("error bug fix", {
+        limit: 5,
+        threshold: 0.3,
+        filters: { ...filters, content_types: ["error"] },
+      });
+
+      // 4. Search for common tasks / user prompts
+      const taskResults = await client.search("implement add create fix update", {
+        limit: 5,
+        threshold: 0.3,
+        filters: { ...filters, content_types: ["user_prompt"] },
+      });
+
+      // 5. Format as onboarding guide
+      const lines: string[] = [];
+      lines.push(`## Project Onboarding: ${projectName}`);
+      lines.push("");
+
+      // Overview
+      lines.push(`### Overview`);
+      if (projectInfo) {
+        lines.push(`- **Sessions:** ${projectInfo.session_count || 0}`);
+        lines.push(`- **Events:** ${projectInfo.event_count || 0}`);
+      } else {
+        lines.push(`- **Total Sessions:** ${stats.total_sessions || 0}`);
+        lines.push(`- **Total Events:** ${stats.total_events || 0}`);
+      }
+      lines.push(`- **Total Projects:** ${stats.total_projects || 0}`);
+      lines.push("");
+
+      // Key Files
+      if (stats.total_files) {
+        lines.push(`### Key Files (most interacted)`);
+        lines.push(`_${stats.total_files} files tracked across all sessions_`);
+        lines.push("");
+      }
+
+      // Tech Stack
+      const languages = Object.entries(stats.by_language || {});
+      if (languages.length > 0) {
+        lines.push(`### Tech Stack`);
+        for (const [lang, count] of languages) {
+          lines.push(`- **${lang}**: ${count} interactions`);
+        }
+        lines.push("");
+      }
+
+      // Top Tools
+      const toolEntries = Object.entries(stats.by_tool || {}).slice(0, 10);
+      if (toolEntries.length > 0) {
+        lines.push(`### Tools Used`);
+        for (const [tool, count] of toolEntries) {
+          lines.push(`- **${tool}**: ${count}`);
+        }
+        lines.push("");
+      }
+
+      // Common Tasks
+      if (taskResults.results.length > 0) {
+        lines.push(`### Common Tasks`);
+        lines.push(`_From frequent user prompts:_`);
+        for (const r of taskResults.results as any[]) {
+          const preview = r.content.replace(/\n/g, " ").slice(0, 120).trim();
+          lines.push(`- ${preview}`);
+        }
+        lines.push("");
+      }
+
+      // Known Gotchas
+      if (errorResults.results.length > 0) {
+        lines.push(`### Known Gotchas`);
+        lines.push(`_From past error events:_`);
+        for (const r of errorResults.results as any[]) {
+          const preview = r.content.replace(/\n/g, " ").slice(0, 120).trim();
+          lines.push(`- ${preview}`);
+        }
+        lines.push("");
+      }
+
+      // Architecture Notes
+      if (archResults.results.length > 0) {
+        lines.push(`### Architecture Notes`);
+        lines.push(`_From past AI explanations:_`);
+        for (const r of archResults.results as any[]) {
+          const preview = r.content.replace(/\n/g, " ").slice(0, 200).trim();
+          lines.push(`- ${preview}`);
+        }
+        lines.push("");
+      }
+
+      if (lines.length <= 5) {
+        lines.push("_Not enough session history to generate a full onboarding guide yet. Keep using Claude Code and check back later._");
+      }
+
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    } catch (err) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Failed to generate onboarding guide: ${err instanceof Error ? err.message : "Unknown error"}`,
+        }],
+      };
+    }
+  }
+);
+
+// ==========================================
+// Tool: mistakes
+// ==========================================
+
+server.registerTool("mistakes", {
+  title: "Mistake Memory",
+  description: "Find past error→fix patterns: when an error was followed by a code fix. Helps avoid repeating the same mistakes. Shows what went wrong and how it was fixed.",
+  inputSchema: z.object({
+    project_id: z.string().optional().describe("Filter by project ID"),
+    limit: z.number().min(1).max(20).default(10).describe("Max results"),
+  }),
+}, async (args) => {
+  const data = await client.getMistakes({ project_id: args.project_id, limit: args.limit });
+
+  if (!data.pairs?.length) {
+    return { content: [{ type: "text" as const, text: "No error→fix patterns found yet. Errors that are followed by edits in the same session will appear here." }] };
+  }
+
+  const lines: string[] = [];
+  lines.push(`## Mistake Memory — ${data.total_pairs} error→fix pairs (${(data.fix_rate * 100).toFixed(0)}% fix rate)\n`);
+
+  for (const p of data.pairs) {
+    const errPreview = (p.error_content || "").slice(0, 100).replace(/\n/g, " ");
+    const fixPreview = (p.fix_preview || "").slice(0, 100).replace(/\n/g, " ");
+    lines.push(`### Error [${p.error_tool}]`);
+    lines.push(`\`${errPreview}\``);
+    lines.push(`**Fix** [${p.fix_tool}] → ${p.fix_file || "?"}`);
+    lines.push(`\`${fixPreview}\``);
+    lines.push(`_${p.project_name} | ${p.created_at}_\n`);
+  }
+
+  return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+});
+
+// ==========================================
+// Tool: debt
+// ==========================================
+
+server.registerTool("debt", {
+  title: "Tech Debt Tracker",
+  description: "Identify technical debt: files that change too often (churn hotspots), TODO/FIXME/HACK markers, recurring errors, and an overall debt score.",
+  inputSchema: z.object({
+    project_id: z.string().optional().describe("Filter by project ID"),
+  }),
+}, async (args) => {
+  const data = await client.getDebt({ project_id: args.project_id });
+
+  const lines: string[] = [];
+  lines.push(`## Tech Debt Report — Score: ${data.churn_score}/100\n`);
+
+  // Hotspots
+  if (data.hotspots?.length > 0) {
+    lines.push("### Churn Hotspots (most frequently modified files)");
+    for (const h of data.hotspots.slice(0, 10)) {
+      const short = (h.file_path as string).replace(/.*\/([^/]+\/[^/]+\/[^/]+)$/, "$1");
+      const errTag = h.error_count > 0 ? ` | ${h.error_count} errors` : "";
+      lines.push(`- **${short}** — ${h.touch_count}x across ${h.session_count} sessions${errTag}`);
+    }
+    lines.push("");
+  }
+
+  // Debt markers
+  if (data.debt_markers?.length > 0) {
+    lines.push("### Debt Markers (TODO/FIXME/HACK found in code)");
+    for (const m of data.debt_markers.slice(0, 10)) {
+      const preview = (m.content_preview || "").replace(/\n/g, " ").slice(0, 80);
+      const file = m.file_path ? ` (${m.file_path.replace(/.*\//, "")})` : "";
+      lines.push(`- \`${preview}\`${file}`);
+    }
+    lines.push("");
+  }
+
+  // Recurring errors
+  if (data.recurring_errors?.length > 0) {
+    lines.push("### Recurring Errors");
+    for (const e of data.recurring_errors.slice(0, 10)) {
+      lines.push(`- **${e.occurrences}x** \`${e.pattern}\` (last: ${e.last_seen})`);
+    }
+    lines.push("");
+  }
+
+  return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+});
 
 // ==========================================
 // Tool: stats
@@ -764,6 +1470,49 @@ server.registerTool(
     return { content: [{ type: "text" as const, text: "Setup cancelled." }] };
   }
 );
+
+// ==========================================
+// Tool: decisions (#71 — Decision Journal)
+// ==========================================
+
+server.registerTool("decisions", {
+  title: "Decision Journal",
+  description: "List architectural decisions detected in past conversations. Finds statements like 'we chose X because Y', 'decided to use Z instead of W'. Decisions are auto-tagged during ingestion.",
+  inputSchema: z.object({
+    project_id: z.string().optional().describe("Filter by project ID"),
+    limit: z.number().min(1).max(30).default(10).describe("Max decisions to return"),
+  }),
+}, async (args) => {
+  try {
+    const data = await client.getDecisions({ project_id: args.project_id, limit: args.limit });
+
+    if (!data.decisions?.length) {
+      return { content: [{ type: "text" as const, text: "No decisions found yet. Decisions are auto-detected in AI outputs containing phrases like 'chose X because', 'decided to', 'instead of', etc." }] };
+    }
+
+    const lines: string[] = [];
+    lines.push(`## Decision Journal — ${data.total} decision(s)\n`);
+
+    for (const [i, d] of (data.decisions as any[]).entries()) {
+      const date = new Date(d.created_at).toLocaleDateString();
+      const preview = (d.content_preview || "").replace(/\n/g, " ").slice(0, 200).trim();
+      lines.push(`### ${i + 1}. ${d.project_name} — ${date}`);
+      lines.push(`${preview}...`);
+      lines.push(`_[id:${d.event_id}]_\n`);
+    }
+
+    lines.push("Use `detail` with event IDs to read the full decision context.");
+
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  } catch (err) {
+    return {
+      content: [{
+        type: "text" as const,
+        text: `Failed to fetch decisions: ${err instanceof Error ? err.message : "Unknown error"}`,
+      }],
+    };
+  }
+});
 
 // ==========================================
 // Start server

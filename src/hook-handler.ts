@@ -150,18 +150,44 @@ async function handleUserPrompt(
   // 1. Save prompt to temp file — will be sent with turn_id at Stop time
   // (transcript doesn't have the promptId yet at UserPromptSubmit)
   if (config.capture.userPrompts && !isCommand) {
-    try {
-      const { writeFileSync, mkdirSync } = await import("node:fs");
-      const tmpDir = "/tmp/claude-rag";
-      mkdirSync(tmpDir, { recursive: true });
-      writeFileSync(`${tmpDir}/pending-${stdin.session_id}.json`, JSON.stringify({
-        event: buildEvent(stdin, "user_prompt", stdin.prompt),
-        project,
-      }));
-    } catch {}
+    const strippedPrompt = stripPrivateTags(stdin.prompt);
+    if (strippedPrompt) {
+      try {
+        const { writeFileSync, mkdirSync } = await import("node:fs");
+        const tmpDir = "/tmp/claude-rag";
+        mkdirSync(tmpDir, { recursive: true });
+        writeFileSync(`${tmpDir}/pending-${stdin.session_id}.json`, JSON.stringify({
+          event: buildEvent(stdin, "user_prompt", strippedPrompt),
+          project,
+        }));
+      } catch {}
+    }
   }
 
-  // 2. Auto RAG injection (skip for plugin commands)
+  // 2.5 Post-compaction recovery
+  let compactionContext = "";
+  if (!isCommand && stdin.transcript_path) {
+    const compacted = await detectCompaction(stdin.transcript_path, stdin.session_id);
+    if (compacted) {
+      try {
+        const recoveryResult = await client.search(
+          "instructions decisions rules conventions preferences architecture",
+          {
+            limit: 5,
+            threshold: 0.3,
+          }
+        );
+        if (recoveryResult.results?.length > 0) {
+          compactionContext = "[COMPACTION RECOVERY] Context was compacted. Re-injecting critical decisions and instructions from earlier in this session:\n\n";
+          for (const r of recoveryResult.results) {
+            compactionContext += `- ${r.content.slice(0, 500)}\n\n`;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Auto RAG injection (skip for plugin commands)
   if (
     !isCommand &&
     (config.rag.mode === "auto" || config.rag.mode === "aggressive")
@@ -182,15 +208,25 @@ async function handleUserPrompt(
 
           process.stdout.write(
             JSON.stringify({
-              additionalContext: context,
+              additionalContext: compactionContext + context,
               systemMessage: summary,
             })
           );
+          return;
         }
       } catch {
         // Timeout or error — no context injected, that's fine
       }
     }
+  }
+
+  // If compaction recovery found context but regular RAG didn't, still inject it
+  if (compactionContext) {
+    process.stdout.write(
+      JSON.stringify({
+        additionalContext: compactionContext,
+      })
+    );
   }
 }
 
@@ -210,13 +246,14 @@ async function handleToolUse(
   const hasFile = isFileContent(stdin.tool_name, filePath);
 
   if (config.capture.toolCalls) {
-    events.push(
-      buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
-        tool_name: stdin.tool_name,
-        tool_input: stdin.tool_input,
-        turnId,
-      })
-    );
+    const toolCallEvent = buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
+      tool_name: stdin.tool_name,
+      tool_input: stdin.tool_input,
+      turnId,
+    });
+    if (toolCallEvent.content) {
+      events.push(toolCallEvent);
+    }
   }
 
   if (config.capture.toolResults) {
@@ -225,15 +262,16 @@ async function handleToolUse(
         ? stdin.tool_response
         : JSON.stringify(stdin.tool_response);
 
-    events.push(
-      buildEvent(stdin, "tool_result", content, {
-        tool_name: stdin.tool_name,
-        tool_input: stdin.tool_input,
-        has_file: hasFile,
-        file_path: filePath,
-        turnId,
-      })
-    );
+    const toolResultEvent = buildEvent(stdin, "tool_result", content, {
+      tool_name: stdin.tool_name,
+      tool_input: stdin.tool_input,
+      has_file: hasFile,
+      file_path: filePath,
+      turnId,
+    });
+    if (toolResultEvent.content) {
+      events.push(toolResultEvent);
+    }
   }
 
   if (events.length > 0) {
@@ -295,16 +333,14 @@ async function handleToolFailure(
   if (!config.capture.toolCalls) return;
   if (config.capture.exclude.tools.includes(stdin.tool_name)) return;
 
-  await client.ingest(
-    [
-      buildEvent(stdin, "error", `Tool ${stdin.tool_name} failed: ${stdin.error}`, {
-        tool_name: stdin.tool_name,
-        tool_input: stdin.tool_input,
-        turnId,
-      }),
-    ],
-    project
-  );
+  const errorEvent = buildEvent(stdin, "error", `Tool ${stdin.tool_name} failed: ${stdin.error}`, {
+    tool_name: stdin.tool_name,
+    tool_input: stdin.tool_input,
+    turnId,
+  });
+  if (!errorEvent.content) return;
+
+  await client.ingest([errorEvent], project);
 }
 
 async function handleStop(
@@ -318,12 +354,14 @@ async function handleStop(
   if (!config.capture.aiOutputs) return;
   if (!stdin.last_assistant_message) return;
 
-  // Token usage from transcript
+  // Token usage from transcript (last turn + session totals)
   const tokenMeta = txInfo?.outputTokens ? {
     input_tokens: txInfo.inputTokens,
     output_tokens: txInfo.outputTokens,
     cache_read_tokens: txInfo.cacheReadTokens,
     model: txInfo.model,
+    session_total_input: txInfo.sessionTotalInput,
+    session_total_output: txInfo.sessionTotalOutput,
   } : undefined;
 
   const events: RawEvent[] = [];
@@ -346,14 +384,18 @@ async function handleStop(
     // No pending prompt
   }
 
-  // 2. Add the ai_output with token count
+  // 2. Add the ai_output with token count (skip if content is entirely private)
   const aiEvent = buildEvent(stdin, "ai_output", stdin.last_assistant_message, { turnId });
-  if (tokenMeta) {
-    aiEvent.metadata = { ...aiEvent.metadata, tokens: tokenMeta };
+  if (aiEvent.content) {
+    if (tokenMeta) {
+      aiEvent.metadata = { ...aiEvent.metadata, tokens: tokenMeta };
+    }
+    events.push(aiEvent);
   }
-  events.push(aiEvent);
 
-  await client.ingest(events, ingestProject);
+  if (events.length > 0) {
+    await client.ingest(events, ingestProject);
+  }
 }
 
 async function handleSubagentStop(
@@ -366,15 +408,13 @@ async function handleSubagentStop(
   if (!config.capture.subAgents) return;
   if (!stdin.last_assistant_message) return;
 
-  await client.ingest(
-    [
-      buildEvent(stdin, "ai_output", stdin.last_assistant_message, {
-        is_sub_agent_override: true,
-        turnId,
-      }),
-    ],
-    project
-  );
+  const subagentEvent = buildEvent(stdin, "ai_output", stdin.last_assistant_message, {
+    is_sub_agent_override: true,
+    turnId,
+  });
+  if (!subagentEvent.content) return;
+
+  await client.ingest([subagentEvent], project);
 }
 
 async function handleSessionStart(
@@ -396,9 +436,9 @@ async function handleSessionStart(
     red: "\x1b[31m",
   };
 
-  // Check marketplace for latest version + RAG search in parallel
+  // Check marketplace + RAG search + continuation in parallel
   const marketplaceUrl = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
-  const [marketplaceResult, searchResult] = await Promise.allSettled([
+  const [marketplaceResult, searchResult, continuationResult] = await Promise.allSettled([
     fetch(marketplaceUrl, { signal: AbortSignal.timeout(3000) })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null),
@@ -409,10 +449,12 @@ async function handleSessionStart(
           threshold: config.rag.threshold,
         })
       : Promise.resolve(null),
+    client.getContinuation().catch(() => null),
   ]);
 
   const marketplace = marketplaceResult.status === "fulfilled" ? marketplaceResult.value : null;
   const search = searchResult.status === "fulfilled" ? searchResult.value : null;
+  const continuation = continuationResult.status === "fulfilled" ? continuationResult.value : null;
 
   // Extract latest version from marketplace
   const latestVersion = marketplace?.plugins?.find((p: any) => p.name === "claude-rag")?.version;
@@ -424,11 +466,23 @@ async function handleSessionStart(
   let versionLine = `\x1b]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1b]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
 
   // RAG context on same line as version
-  let additionalContext: string | undefined;
-  if (search && search.results && search.results.length > 0) {
-    additionalContext = formatResultsForClaude(search.results, config.rag.maxContextTokens);
-    versionLine += ` — loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
+  let additionalContext = "";
+
+  // Continuation: "where you left off" from last session
+  const cont = continuation?.continuation;
+  if (cont?.text) {
+    additionalContext += `[Continuation] ${cont.text}\n\n`;
+    versionLine += ` — ${C.dim}resumed${C.reset}`;
   }
+
+  // RAG search results
+  if (search && search.results && search.results.length > 0) {
+    additionalContext += formatResultsForClaude(search.results, config.rag.maxContextTokens);
+    versionLine += `${cont?.text ? " +" : " —"} ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
+  }
+
+  // Clean up: if no context at all, set to undefined
+  if (!additionalContext.trim()) additionalContext = "";
 
   // Check for update (only if marketplace version is newer)
   if (latestVersion && isNewerVersion(latestVersion, PLUGIN_VERSION)) {
@@ -439,9 +493,7 @@ async function handleSessionStart(
   const output: Record<string, unknown> = {
     systemMessage: lines.join("\n"),
   };
-  if (additionalContext) {
-    output.additionalContext = additionalContext;
-  }
+  if (additionalContext) output.additionalContext = additionalContext;
 
   process.stdout.write(JSON.stringify(output));
 }
@@ -449,6 +501,21 @@ async function handleSessionStart(
 // ==========================================
 // Helpers
 // ==========================================
+
+/**
+ * Strip <private>...</private> blocks from content.
+ * Users can wrap sensitive content in these tags to prevent it from being stored in the RAG database.
+ * - Removes all <private>...</private> blocks and their content (multiline)
+ * - Handles nested tags by removing everything between outermost pairs
+ * - Handles multiple blocks in the same content
+ * - Cleans up extra whitespace/newlines left by removal
+ * - Returns empty string if nothing remains after stripping
+ */
+function stripPrivateTags(content: string): string {
+  const stripped = content.replace(/<private>[\s\S]*?<\/private>/gi, "");
+  // Clean up extra whitespace: collapse multiple newlines, trim
+  return stripped.replace(/\n{3,}/g, "\n\n").trim();
+}
 
 /** Returns true if `latest` is strictly newer than `current` (semver) */
 function isNewerVersion(latest: string, current: string): boolean {
@@ -475,6 +542,8 @@ function buildEvent(
     turnId?: string;
   }
 ): RawEvent {
+  const strippedContent = stripPrivateTags(content);
+
   const agentType = stdin.agent_type || "main";
   const isSubAgent =
     extra?.is_sub_agent_override ??
@@ -484,7 +553,7 @@ function buildEvent(
     session_id: stdin.session_id,
     agent_id: stdin.agent_id || "main",
     content_type: contentType,
-    content,
+    content: strippedContent,
     tool_name: extra?.tool_name,
     tool_input: extra?.tool_input,
     agent_type: agentType,
@@ -504,32 +573,28 @@ interface TranscriptInfo {
   outputTokens?: number;
   cacheReadTokens?: number;
   model?: string;
+  // Session totals (sum of ALL turns)
+  sessionTotalInput?: number;
+  sessionTotalOutput?: number;
 }
 
 /**
  * Extract promptId + token usage from the transcript.
- * Reads last 10KB, scans from end.
- * Fast: ~2-5ms
+ * - promptId + last turn tokens: reads last 10KB (fast, ~2ms)
+ * - session totals: reads full file, sums all usage blocks
  */
 async function readTranscriptInfo(transcriptPath: string): Promise<TranscriptInfo> {
   const info: TranscriptInfo = {};
   try {
-    const { statSync, openSync, readSync, closeSync } = await import("node:fs");
-    const stat = statSync(transcriptPath);
-    if (stat.size === 0) return info;
+    const { readFileSync } = await import("node:fs");
+    const content = readFileSync(transcriptPath, "utf-8");
+    if (!content) return info;
 
-    const TAIL_BYTES = 10_000;
-    const fd = openSync(transcriptPath, "r");
-    const start = Math.max(0, stat.size - TAIL_BYTES);
-    const buf = Buffer.alloc(Math.min(TAIL_BYTES, stat.size));
-    readSync(fd, buf, 0, buf.length, start);
-    closeSync(fd);
+    const lines = content.split("\n").filter(l => l.trim());
+    let totalInput = 0;
+    let totalOutput = 0;
 
-    const tail = buf.toString("utf-8");
-    const lines = tail.split("\n").filter(l => l.trim());
-    if (start > 0) lines.shift();
-
-    // Scan from end
+    // Single pass: collect all data
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const m = JSON.parse(lines[i]);
@@ -539,7 +604,7 @@ async function readTranscriptInfo(transcriptPath: string): Promise<TranscriptInf
           info.promptId = m.promptId;
         }
 
-        // Get token usage from latest assistant message with usage
+        // Get last turn tokens (first usage block found from end)
         if (!info.outputTokens && m.message?.usage) {
           const u = m.message.usage;
           info.inputTokens = u.input_tokens;
@@ -551,12 +616,27 @@ async function readTranscriptInfo(transcriptPath: string): Promise<TranscriptInf
         if (!info.model && m.message?.model) {
           info.model = m.message.model;
         }
-
-        // Stop once we have everything
-        if (info.promptId && info.outputTokens) break;
       } catch {
         // skip
       }
+    }
+
+    // Forward pass: sum ALL usage blocks for session totals
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line);
+        if (m.message?.usage) {
+          totalInput += m.message.usage.input_tokens || 0;
+          totalOutput += m.message.usage.output_tokens || 0;
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    if (totalOutput > 0) {
+      info.sessionTotalInput = totalInput;
+      info.sessionTotalOutput = totalOutput;
     }
   } catch {
     // ignore
@@ -568,6 +648,42 @@ async function readTranscriptInfo(transcriptPath: string): Promise<TranscriptInf
 async function getPromptIdFromTranscript(transcriptPath: string): Promise<string | undefined> {
   const info = await readTranscriptInfo(transcriptPath);
   return info.promptId;
+}
+
+/** Check if context compaction occurred by looking for summary messages in transcript */
+async function detectCompaction(transcriptPath: string, sessionId: string): Promise<boolean> {
+  try {
+    const { readFileSync, existsSync, writeFileSync, mkdirSync } = await import("node:fs");
+
+    // Count summary messages in transcript
+    const content = readFileSync(transcriptPath, "utf-8");
+    const lines = content.split("\n").filter(l => l.trim());
+    let summaryCount = 0;
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line);
+        if (m.type === "summary") summaryCount++;
+      } catch {}
+    }
+
+    // Compare with last known count
+    const stateFile = `/tmp/claude-rag/compaction-${sessionId}.json`;
+    let lastCount = 0;
+    if (existsSync(stateFile)) {
+      try {
+        lastCount = JSON.parse(readFileSync(stateFile, "utf-8")).summaryCount || 0;
+      } catch {}
+    }
+
+    // Save current count
+    mkdirSync("/tmp/claude-rag", { recursive: true });
+    writeFileSync(stateFile, JSON.stringify({ summaryCount }));
+
+    // Compaction detected if summary count increased
+    return summaryCount > lastCount;
+  } catch {
+    return false;
+  }
 }
 
 function detectProject(cwd?: string): string {

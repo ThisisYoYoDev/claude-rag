@@ -474,6 +474,102 @@ class RagApiClient {
       throw new Error(`Search failed: ${res.status}`);
     return res.json();
   }
+  async getEvents(ids) {
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/events?ids=${ids.join(",")}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Events fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getEvent(id) {
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/events/${id}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Event fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getTurn(turnId) {
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/turns/${turnId}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Turn fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getTimeline(sessionId, opts) {
+    const params = new URLSearchParams;
+    if (opts?.limit)
+      params.set("limit", String(opts.limit));
+    if (opts?.cursor)
+      params.set("cursor", opts.cursor);
+    if (opts?.direction)
+      params.set("direction", opts.direction);
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/sessions/${sessionId}/timeline${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Timeline fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getSessionSummary(sessionId) {
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/sessions/${sessionId}/summary`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Session summary fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async generateSessionSummary(sessionId) {
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/sessions/${sessionId}/summary`, { method: "POST", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Session summary generation failed: ${res.status}`);
+    return res.json();
+  }
+  async getContinuation() {
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/sessions/latest/continuation`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Continuation fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getProductivity(period, projectId) {
+    const params = new URLSearchParams;
+    if (period)
+      params.set("period", period);
+    if (projectId)
+      params.set("project_id", projectId);
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/analytics/productivity${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Productivity fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getMistakes(opts) {
+    const params = new URLSearchParams;
+    if (opts?.project_id)
+      params.set("project_id", opts.project_id);
+    if (opts?.limit)
+      params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/analytics/mistakes${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Mistakes fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getDebt(opts) {
+    const params = new URLSearchParams;
+    if (opts?.project_id)
+      params.set("project_id", opts.project_id);
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/analytics/debt${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Debt fetch failed: ${res.status}`);
+    return res.json();
+  }
+  async getDecisions(opts) {
+    const params = new URLSearchParams;
+    if (opts?.project_id)
+      params.set("project_id", opts.project_id);
+    if (opts?.limit)
+      params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/analytics/decisions${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Decisions fetch failed: ${res.status}`);
+    return res.json();
+  }
   async health() {
     const res = await this.fetchWithTimeout(`${this.endpoint}/health`, {
       method: "GET",
@@ -485,7 +581,7 @@ class RagApiClient {
 // package.json
 var package_default = {
   name: "@claude-rag/plugin",
-  version: "0.2.3",
+  version: "0.3.0",
   type: "module",
   main: "dist/hook-handler.js",
   scripts: {
@@ -558,15 +654,40 @@ async function main() {
 async function handleUserPrompt(stdin, client, config2, project, turnId) {
   const isCommand = stdin.prompt.startsWith("/claude-rag:");
   if (config2.capture.userPrompts && !isCommand) {
-    try {
-      const { writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = await import("node:fs");
-      const tmpDir = "/tmp/claude-rag";
-      mkdirSync2(tmpDir, { recursive: true });
-      writeFileSync2(`${tmpDir}/pending-${stdin.session_id}.json`, JSON.stringify({
-        event: buildEvent(stdin, "user_prompt", stdin.prompt),
-        project
-      }));
-    } catch {}
+    const strippedPrompt = stripPrivateTags(stdin.prompt);
+    if (strippedPrompt) {
+      try {
+        const { writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = await import("node:fs");
+        const tmpDir = "/tmp/claude-rag";
+        mkdirSync2(tmpDir, { recursive: true });
+        writeFileSync2(`${tmpDir}/pending-${stdin.session_id}.json`, JSON.stringify({
+          event: buildEvent(stdin, "user_prompt", strippedPrompt),
+          project
+        }));
+      } catch {}
+    }
+  }
+  let compactionContext = "";
+  if (!isCommand && stdin.transcript_path) {
+    const compacted = await detectCompaction(stdin.transcript_path, stdin.session_id);
+    if (compacted) {
+      try {
+        const recoveryResult = await client.search("instructions decisions rules conventions preferences architecture", {
+          limit: 5,
+          threshold: 0.3
+        });
+        if (recoveryResult.results?.length > 0) {
+          compactionContext = `[COMPACTION RECOVERY] Context was compacted. Re-injecting critical decisions and instructions from earlier in this session:
+
+`;
+          for (const r of recoveryResult.results) {
+            compactionContext += `- ${r.content.slice(0, 500)}
+
+`;
+          }
+        }
+      } catch {}
+    }
   }
   if (!isCommand && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive")) {
     if (config2.rag.perPrompt.enabled) {
@@ -579,12 +700,18 @@ async function handleUserPrompt(stdin, client, config2, project, turnId) {
           const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
           const summary = formatResultsSummary(result.results, result.latency_ms);
           process.stdout.write(JSON.stringify({
-            additionalContext: context,
+            additionalContext: compactionContext + context,
             systemMessage: summary
           }));
+          return;
         }
       } catch {}
     }
+  }
+  if (compactionContext) {
+    process.stdout.write(JSON.stringify({
+      additionalContext: compactionContext
+    }));
   }
 }
 async function handleToolUse(stdin, client, config2, project, turnId) {
@@ -594,21 +721,27 @@ async function handleToolUse(stdin, client, config2, project, turnId) {
   const filePath = stdin.tool_input?.file_path;
   const hasFile = isFileContent(stdin.tool_name, filePath);
   if (config2.capture.toolCalls) {
-    events.push(buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
+    const toolCallEvent = buildEvent(stdin, "tool_call", JSON.stringify(stdin.tool_input), {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
       turnId
-    }));
+    });
+    if (toolCallEvent.content) {
+      events.push(toolCallEvent);
+    }
   }
   if (config2.capture.toolResults) {
     const content = typeof stdin.tool_response === "string" ? stdin.tool_response : JSON.stringify(stdin.tool_response);
-    events.push(buildEvent(stdin, "tool_result", content, {
+    const toolResultEvent = buildEvent(stdin, "tool_result", content, {
       tool_name: stdin.tool_name,
       tool_input: stdin.tool_input,
       has_file: hasFile,
       file_path: filePath,
       turnId
-    }));
+    });
+    if (toolResultEvent.content) {
+      events.push(toolResultEvent);
+    }
   }
   if (events.length > 0) {
     await client.ingest(events, project);
@@ -659,13 +792,14 @@ async function handleToolFailure(stdin, client, config2, project, turnId) {
     return;
   if (config2.capture.exclude.tools.includes(stdin.tool_name))
     return;
-  await client.ingest([
-    buildEvent(stdin, "error", `Tool ${stdin.tool_name} failed: ${stdin.error}`, {
-      tool_name: stdin.tool_name,
-      tool_input: stdin.tool_input,
-      turnId
-    })
-  ], project);
+  const errorEvent = buildEvent(stdin, "error", `Tool ${stdin.tool_name} failed: ${stdin.error}`, {
+    tool_name: stdin.tool_name,
+    tool_input: stdin.tool_input,
+    turnId
+  });
+  if (!errorEvent.content)
+    return;
+  await client.ingest([errorEvent], project);
 }
 async function handleStop(stdin, client, config2, project, turnId, txInfo) {
   if (!config2.capture.aiOutputs)
@@ -676,7 +810,9 @@ async function handleStop(stdin, client, config2, project, turnId, txInfo) {
     input_tokens: txInfo.inputTokens,
     output_tokens: txInfo.outputTokens,
     cache_read_tokens: txInfo.cacheReadTokens,
-    model: txInfo.model
+    model: txInfo.model,
+    session_total_input: txInfo.sessionTotalInput,
+    session_total_output: txInfo.sessionTotalOutput
   } : undefined;
   const events = [];
   let ingestProject = project;
@@ -695,23 +831,28 @@ async function handleStop(stdin, client, config2, project, turnId, txInfo) {
     unlinkSync(pendingFile);
   } catch {}
   const aiEvent = buildEvent(stdin, "ai_output", stdin.last_assistant_message, { turnId });
-  if (tokenMeta) {
-    aiEvent.metadata = { ...aiEvent.metadata, tokens: tokenMeta };
+  if (aiEvent.content) {
+    if (tokenMeta) {
+      aiEvent.metadata = { ...aiEvent.metadata, tokens: tokenMeta };
+    }
+    events.push(aiEvent);
   }
-  events.push(aiEvent);
-  await client.ingest(events, ingestProject);
+  if (events.length > 0) {
+    await client.ingest(events, ingestProject);
+  }
 }
 async function handleSubagentStop(stdin, client, config2, project, turnId) {
   if (!config2.capture.subAgents)
     return;
   if (!stdin.last_assistant_message)
     return;
-  await client.ingest([
-    buildEvent(stdin, "ai_output", stdin.last_assistant_message, {
-      is_sub_agent_override: true,
-      turnId
-    })
-  ], project);
+  const subagentEvent = buildEvent(stdin, "ai_output", stdin.last_assistant_message, {
+    is_sub_agent_override: true,
+    turnId
+  });
+  if (!subagentEvent.content)
+    return;
+  await client.ingest([subagentEvent], project);
 }
 async function handleSessionStart(stdin, client, config2, project) {
   if (!config2.connection.apiKey)
@@ -726,23 +867,34 @@ async function handleSessionStart(stdin, client, config2, project) {
     red: "\x1B[31m"
   };
   const marketplaceUrl = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
-  const [marketplaceResult, searchResult] = await Promise.allSettled([
+  const [marketplaceResult, searchResult, continuationResult] = await Promise.allSettled([
     fetch(marketplaceUrl, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     config2.rag.sessionStart.enabled && (config2.rag.mode === "auto" || config2.rag.mode === "aggressive") ? client.search(`recent project context summary ${project}`, {
       limit: config2.rag.sessionStart.maxItems,
       threshold: config2.rag.threshold
-    }) : Promise.resolve(null)
+    }) : Promise.resolve(null),
+    client.getContinuation().catch(() => null)
   ]);
   const marketplace = marketplaceResult.status === "fulfilled" ? marketplaceResult.value : null;
   const search = searchResult.status === "fulfilled" ? searchResult.value : null;
+  const continuation = continuationResult.status === "fulfilled" ? continuationResult.value : null;
   const latestVersion = marketplace?.plugins?.find((p) => p.name === "claude-rag")?.version;
   const lines = [];
   let versionLine = `\x1B]8;;https://clauderag.io\x07${C.purple}Claude RAG${C.reset}\x1B]8;;\x07 ${C.dim}v${PLUGIN_VERSION}${C.reset}`;
-  let additionalContext;
-  if (search && search.results && search.results.length > 0) {
-    additionalContext = formatResultsForClaude(search.results, config2.rag.maxContextTokens);
-    versionLine += ` — loaded ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
+  let additionalContext = "";
+  const cont = continuation?.continuation;
+  if (cont?.text) {
+    additionalContext += `[Continuation] ${cont.text}
+
+`;
+    versionLine += ` — ${C.dim}resumed${C.reset}`;
   }
+  if (search && search.results && search.results.length > 0) {
+    additionalContext += formatResultsForClaude(search.results, config2.rag.maxContextTokens);
+    versionLine += `${cont?.text ? " +" : " —"} ${C.yellow}${search.results.length}${C.reset} context${search.results.length > 1 ? "s" : ""} from ${C.cyan}"${project}"${C.reset}`;
+  }
+  if (!additionalContext.trim())
+    additionalContext = "";
   if (latestVersion && isNewerVersion(latestVersion, PLUGIN_VERSION)) {
     versionLine += `
   ${C.yellow}Update available: v${latestVersion}${C.reset} — run: ${C.cyan}claude plugin update claude-rag@yoyodev${C.reset}`;
@@ -752,10 +904,15 @@ async function handleSessionStart(stdin, client, config2, project) {
     systemMessage: lines.join(`
 `)
   };
-  if (additionalContext) {
+  if (additionalContext)
     output.additionalContext = additionalContext;
-  }
   process.stdout.write(JSON.stringify(output));
+}
+function stripPrivateTags(content) {
+  const stripped = content.replace(/<private>[\s\S]*?<\/private>/gi, "");
+  return stripped.replace(/\n{3,}/g, `
+
+`).trim();
 }
 function isNewerVersion(latest, current) {
   const a = latest.split(".").map(Number);
@@ -769,13 +926,14 @@ function isNewerVersion(latest, current) {
   return false;
 }
 function buildEvent(stdin, contentType, content, extra) {
+  const strippedContent = stripPrivateTags(content);
   const agentType = stdin.agent_type || "main";
   const isSubAgent = extra?.is_sub_agent_override ?? (agentType !== "main" && agentType !== undefined && !!stdin.agent_type);
   return {
     session_id: stdin.session_id,
     agent_id: stdin.agent_id || "main",
     content_type: contentType,
-    content,
+    content: strippedContent,
     tool_name: extra?.tool_name,
     tool_input: extra?.tool_input,
     agent_type: agentType,
@@ -791,21 +949,14 @@ function buildEvent(stdin, contentType, content, extra) {
 async function readTranscriptInfo(transcriptPath) {
   const info = {};
   try {
-    const { statSync, openSync, readSync, closeSync } = await import("node:fs");
-    const stat = statSync(transcriptPath);
-    if (stat.size === 0)
+    const { readFileSync: readFileSync2 } = await import("node:fs");
+    const content = readFileSync2(transcriptPath, "utf-8");
+    if (!content)
       return info;
-    const TAIL_BYTES = 1e4;
-    const fd = openSync(transcriptPath, "r");
-    const start = Math.max(0, stat.size - TAIL_BYTES);
-    const buf = Buffer.alloc(Math.min(TAIL_BYTES, stat.size));
-    readSync(fd, buf, 0, buf.length, start);
-    closeSync(fd);
-    const tail = buf.toString("utf-8");
-    const lines = tail.split(`
+    const lines = content.split(`
 `).filter((l) => l.trim());
-    if (start > 0)
-      lines.shift();
+    let totalInput = 0;
+    let totalOutput = 0;
     for (let i = lines.length - 1;i >= 0; i--) {
       try {
         const m = JSON.parse(lines[i]);
@@ -821,12 +972,51 @@ async function readTranscriptInfo(transcriptPath) {
         if (!info.model && m.message?.model) {
           info.model = m.message.model;
         }
-        if (info.promptId && info.outputTokens)
-          break;
       } catch {}
+    }
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line);
+        if (m.message?.usage) {
+          totalInput += m.message.usage.input_tokens || 0;
+          totalOutput += m.message.usage.output_tokens || 0;
+        }
+      } catch {}
+    }
+    if (totalOutput > 0) {
+      info.sessionTotalInput = totalInput;
+      info.sessionTotalOutput = totalOutput;
     }
   } catch {}
   return info;
+}
+async function detectCompaction(transcriptPath, sessionId) {
+  try {
+    const { readFileSync: readFileSync2, existsSync: existsSync2, writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = await import("node:fs");
+    const content = readFileSync2(transcriptPath, "utf-8");
+    const lines = content.split(`
+`).filter((l) => l.trim());
+    let summaryCount = 0;
+    for (const line of lines) {
+      try {
+        const m = JSON.parse(line);
+        if (m.type === "summary")
+          summaryCount++;
+      } catch {}
+    }
+    const stateFile = `/tmp/claude-rag/compaction-${sessionId}.json`;
+    let lastCount = 0;
+    if (existsSync2(stateFile)) {
+      try {
+        lastCount = JSON.parse(readFileSync2(stateFile, "utf-8")).summaryCount || 0;
+      } catch {}
+    }
+    mkdirSync2("/tmp/claude-rag", { recursive: true });
+    writeFileSync2(stateFile, JSON.stringify({ summaryCount }));
+    return summaryCount > lastCount;
+  } catch {
+    return false;
+  }
 }
 function detectProject(cwd) {
   if (!cwd)

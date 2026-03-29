@@ -74,6 +74,129 @@ export class RagApiClient {
     return res.json();
   }
 
+  async getEvents(ids: string[]): Promise<{ events: any[] }> {
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/events?ids=${ids.join(",")}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Events fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getEvent(id: string): Promise<{ event: any }> {
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/events/${id}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Event fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getTurn(turnId: string): Promise<{ turn: any }> {
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/turns/${turnId}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Turn fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getTimeline(sessionId: string, opts?: {
+    limit?: number;
+    cursor?: string;
+    direction?: "asc" | "desc";
+  }): Promise<any> {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.cursor) params.set("cursor", opts.cursor);
+    if (opts?.direction) params.set("direction", opts.direction);
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/sessions/${sessionId}/timeline${qs ? "?" + qs : ""}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Timeline fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getSessionSummary(sessionId: string): Promise<any> {
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/sessions/${sessionId}/summary`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Session summary fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async generateSessionSummary(sessionId: string): Promise<any> {
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/sessions/${sessionId}/summary`,
+      { method: "POST", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Session summary generation failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getContinuation(): Promise<any> {
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/sessions/latest/continuation`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Continuation fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getProductivity(period?: string, projectId?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (period) params.set("period", period);
+    if (projectId) params.set("project_id", projectId);
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/analytics/productivity${qs ? "?" + qs : ""}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Productivity fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getMistakes(opts?: { project_id?: string; limit?: number }): Promise<any> {
+    const params = new URLSearchParams();
+    if (opts?.project_id) params.set("project_id", opts.project_id);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/analytics/mistakes${qs ? "?" + qs : ""}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Mistakes fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getDebt(opts?: { project_id?: string }): Promise<any> {
+    const params = new URLSearchParams();
+    if (opts?.project_id) params.set("project_id", opts.project_id);
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/analytics/debt${qs ? "?" + qs : ""}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Debt fetch failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getDecisions(opts?: { project_id?: string; limit?: number }): Promise<any> {
+    const params = new URLSearchParams();
+    if (opts?.project_id) params.set("project_id", opts.project_id);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(
+      `${this.endpoint}/api/v1/analytics/decisions${qs ? "?" + qs : ""}`,
+      { method: "GET", headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(`Decisions fetch failed: ${res.status}`);
+    return res.json();
+  }
+
   async health(): Promise<{ status: string; db: boolean; latest_plugin_version?: string }> {
     const res = await this.fetchWithTimeout(`${this.endpoint}/health`, {
       method: "GET",

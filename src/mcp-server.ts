@@ -1472,6 +1472,62 @@ server.registerTool(
 );
 
 // ==========================================
+// Tool: entities (#68 — Entity Search)
+// ==========================================
+
+server.registerTool("entities", {
+  title: "Entity Search",
+  description: "Search extracted entities: file paths, function/class names, package names, error types. Find all events related to a specific entity across all sessions.",
+  inputSchema: z.object({
+    name: z.string().optional().describe("Search entities by name (partial match). E.g. 'authMiddleware', 'hook-handler.ts', 'TypeError'"),
+    type: z.enum(["file", "function", "package", "error_type"]).optional().describe("Filter by entity type"),
+    project_id: z.string().optional().describe("Filter by project ID"),
+    limit: z.number().min(1).max(50).default(20).describe("Max results"),
+  }),
+}, async (args) => {
+  try {
+    const data = await client.getEntities({
+      name: args.name,
+      type: args.type,
+      project_id: args.project_id,
+      limit: args.limit,
+    });
+
+    // If searching by name → show matching events
+    if (args.name && data.results) {
+      if (!data.results.length) {
+        return { content: [{ type: "text" as const, text: `No events found with entity matching "${args.name}".` }] };
+      }
+      const lines: string[] = [];
+      lines.push(`## Events with entity "${args.name}" (${data.total} results)\n`);
+      for (const r of data.results) {
+        const tool = r.tool_name ? ` [${r.tool_name}]` : "";
+        const preview = (r.content_preview || "").replace(/\n/g, " ").slice(0, 80);
+        const ents = (r.entities || []).map((e: any) => `${e.type}:${e.name}`).slice(0, 5).join(", ");
+        lines.push(`- **${r.content_type}**${tool} | ${r.project_name} | ${r.created_at.slice(0, 10)}`);
+        lines.push(`  ${preview}`);
+        lines.push(`  _Entities: ${ents}_ [id:${r.event_id}]\n`);
+      }
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    }
+
+    // Otherwise → show aggregated entity list
+    if (!data.entities?.length) {
+      return { content: [{ type: "text" as const, text: "No entities extracted yet. Entities are extracted from new events at ingest time." }] };
+    }
+    const lines: string[] = [];
+    const typeFilter = args.type ? ` (type: ${args.type})` : "";
+    lines.push(`## Entities${typeFilter} — ${data.total} unique\n`);
+    for (const e of data.entities) {
+      lines.push(`- **${e.name}** (${e.type}) — ${e.occurrences}x`);
+    }
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  } catch (err) {
+    return { content: [{ type: "text" as const, text: `Failed to fetch entities: ${err instanceof Error ? err.message : "Unknown"}` }] };
+  }
+});
+
+// ==========================================
 // Tool: decisions (#71 — Decision Journal)
 // ==========================================
 

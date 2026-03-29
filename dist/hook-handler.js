@@ -558,6 +558,22 @@ class RagApiClient {
       throw new Error(`Debt fetch failed: ${res.status}`);
     return res.json();
   }
+  async getEntities(opts) {
+    const params = new URLSearchParams;
+    if (opts?.type)
+      params.set("type", opts.type);
+    if (opts?.name)
+      params.set("name", opts.name);
+    if (opts?.project_id)
+      params.set("project_id", opts.project_id);
+    if (opts?.limit)
+      params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/analytics/entities${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Entities fetch failed: ${res.status}`);
+    return res.json();
+  }
   async getDecisions(opts) {
     const params = new URLSearchParams;
     if (opts?.project_id)

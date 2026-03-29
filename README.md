@@ -21,7 +21,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.3.0-7c3aed" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/MCP_tools-20-blue" alt="MCP Tools">
+  <img src="https://img.shields.io/badge/MCP_tools-21-blue" alt="MCP Tools">
   <img src="https://img.shields.io/badge/commands-19-orange" alt="Commands">
   <img src="https://img.shields.io/badge/embeddings-Gemini_1536d-red" alt="Embeddings">
 </p>
@@ -95,7 +95,7 @@ The setup auto-detects your email from `git config`, sends a magic link, and con
 ### What you see at startup
 
 ```
-Claude RAG v0.3.0 — resumed + 3 contexts from "myproject"
+⎿ Claude RAG v0.3.1 — resumed + 3 contexts from "myproject"
 ```
 
 ### What you see on each prompt
@@ -189,7 +189,7 @@ Claude RAG v0.3.0 — resumed + 3 contexts from "myproject"
 
 ## MCP Tools
 
-20 native MCP tools — no curl hacks, no shell commands:
+21 native MCP tools:
 
 | Tool | Description |
 |------|-------------|
@@ -204,6 +204,7 @@ Claude RAG v0.3.0 — resumed + 3 contexts from "myproject"
 | `onboard` | Auto-generated project onboarding guide |
 | `mistakes` | Error-to-fix patterns from past sessions |
 | `debt` | Tech debt: churn hotspots, markers, recurring errors |
+| `entities` | Search extracted entities: files, functions, packages, error types |
 | `decisions` | Architectural decisions auto-detected in conversations |
 | `stats` | Database statistics |
 | `browse_sessions` | List/detail sessions |
@@ -227,7 +228,7 @@ Plugin (your machine)               Backend (cloud)
 │  ├ Stop              │            │  ├ /events, /turns       │
 │  └ SubagentStop      │            │  └ /projects/*           │
 │                      │            │                          │
-│  20 MCP Tools        │            │  PostgreSQL + pgvector   │
+│  21 MCP Tools        │            │  PostgreSQL + pgvector   │
 │  19 Commands         │            │  + pgvectorscale DiskANN │
 │                      │            │  + tsvector GIN (BM25)   │
 └─────────────────────-┘            │                          │

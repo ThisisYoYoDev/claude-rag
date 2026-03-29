@@ -32995,6 +32995,22 @@ class RagApiClient {
       throw new Error(`Debt fetch failed: ${res.status}`);
     return res.json();
   }
+  async getEntities(opts) {
+    const params = new URLSearchParams;
+    if (opts?.type)
+      params.set("type", opts.type);
+    if (opts?.name)
+      params.set("name", opts.name);
+    if (opts?.project_id)
+      params.set("project_id", opts.project_id);
+    if (opts?.limit)
+      params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/analytics/entities${qs ? "?" + qs : ""}`, { method: "GET", headers: this.headers() });
+    if (!res.ok)
+      throw new Error(`Entities fetch failed: ${res.status}`);
+    return res.json();
+  }
   async getDecisions(opts) {
     const params = new URLSearchParams;
     if (opts?.project_id)
@@ -34524,6 +34540,58 @@ Click the magic link in your email, or use:
     };
   }
   return { content: [{ type: "text", text: "Setup cancelled." }] };
+});
+server.registerTool("entities", {
+  title: "Entity Search",
+  description: "Search extracted entities: file paths, function/class names, package names, error types. Find all events related to a specific entity across all sessions.",
+  inputSchema: exports_external.object({
+    name: exports_external.string().optional().describe("Search entities by name (partial match). E.g. 'authMiddleware', 'hook-handler.ts', 'TypeError'"),
+    type: exports_external.enum(["file", "function", "package", "error_type"]).optional().describe("Filter by entity type"),
+    project_id: exports_external.string().optional().describe("Filter by project ID"),
+    limit: exports_external.number().min(1).max(50).default(20).describe("Max results")
+  })
+}, async (args) => {
+  try {
+    const data = await client.getEntities({
+      name: args.name,
+      type: args.type,
+      project_id: args.project_id,
+      limit: args.limit
+    });
+    if (args.name && data.results) {
+      if (!data.results.length) {
+        return { content: [{ type: "text", text: `No events found with entity matching "${args.name}".` }] };
+      }
+      const lines2 = [];
+      lines2.push(`## Events with entity "${args.name}" (${data.total} results)
+`);
+      for (const r of data.results) {
+        const tool = r.tool_name ? ` [${r.tool_name}]` : "";
+        const preview = (r.content_preview || "").replace(/\n/g, " ").slice(0, 80);
+        const ents = (r.entities || []).map((e) => `${e.type}:${e.name}`).slice(0, 5).join(", ");
+        lines2.push(`- **${r.content_type}**${tool} | ${r.project_name} | ${r.created_at.slice(0, 10)}`);
+        lines2.push(`  ${preview}`);
+        lines2.push(`  _Entities: ${ents}_ [id:${r.event_id}]
+`);
+      }
+      return { content: [{ type: "text", text: lines2.join(`
+`) }] };
+    }
+    if (!data.entities?.length) {
+      return { content: [{ type: "text", text: "No entities extracted yet. Entities are extracted from new events at ingest time." }] };
+    }
+    const lines = [];
+    const typeFilter = args.type ? ` (type: ${args.type})` : "";
+    lines.push(`## Entities${typeFilter} — ${data.total} unique
+`);
+    for (const e of data.entities) {
+      lines.push(`- **${e.name}** (${e.type}) — ${e.occurrences}x`);
+    }
+    return { content: [{ type: "text", text: lines.join(`
+`) }] };
+  } catch (err) {
+    return { content: [{ type: "text", text: `Failed to fetch entities: ${err instanceof Error ? err.message : "Unknown"}` }] };
+  }
 });
 server.registerTool("decisions", {
   title: "Decision Journal",

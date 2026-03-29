@@ -33436,7 +33436,7 @@ function deepMerge(target, source) {
 // package.json
 var package_default = {
   name: "@claude-rag/plugin",
-  version: "0.3.0",
+  version: "0.3.1",
   type: "module",
   main: "dist/hook-handler.js",
   scripts: {

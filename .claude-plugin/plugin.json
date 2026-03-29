@@ -1,7 +1,7 @@
 {
   "name": "claude-rag",
   "description": "RAG plugin for Claude Code — capture, index, and search across all conversations, tools, and sub-agents",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "author": {
     "name": "YoyoDev"
   },

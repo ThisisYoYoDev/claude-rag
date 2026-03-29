@@ -597,7 +597,7 @@ class RagApiClient {
 // package.json
 var package_default = {
   name: "@claude-rag/plugin",
-  version: "0.3.1",
+  version: "0.3.2",
   type: "module",
   main: "dist/hook-handler.js",
   scripts: {

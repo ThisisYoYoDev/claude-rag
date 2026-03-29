@@ -218,7 +218,7 @@ Claude RAG v0.3.0 — resumed + 3 contexts from "myproject"
 
 ```
 Plugin (your machine)               Backend (cloud)
-┌─────────────────────┐            ┌──────────────────────────┐
+┌─────────────────────-┐            ┌──────────────────────────┐
 │  6 Hooks             │            │  Hono API (Bun)          │
 │  ├ SessionStart      │───────────▶│  ├ /ingest               │
 │  ├ UserPromptSubmit  │  auto RAG  │  ├ /search (hybrid)      │
@@ -230,13 +230,13 @@ Plugin (your machine)               Backend (cloud)
 │  20 MCP Tools        │            │  PostgreSQL + pgvector   │
 │  19 Commands         │            │  + pgvectorscale DiskANN │
 │                      │            │  + tsvector GIN (BM25)   │
-└─────────────────────┘            │                          │
-                                   │  Gemini Embedding 2      │
-                                   │  (1536d, multimodal)     │
-                                   │                          │
-                                   │  Hetzner S3              │
-                                   │  (images, PDFs, audio)   │
-                                   └──────────────────────────┘
+└─────────────────────-┘            │                          │
+                                    │  Gemini Embedding 2      │
+                                    │  (1536d, multimodal)     │
+                                    │                          │
+                                    │  Hetzner S3              │
+                                    │  (images, PDFs, audio)   │
+                                    └──────────────────────────┘
 ```
 
 ## Search: How hybrid works
@@ -337,10 +337,6 @@ Config file: `~/.claude/plugins/claude-rag/config.json`
 
 - [ ] Web dashboard (app.clauderag.io)
 - [ ] Self-hosted Docker version
-- [ ] Multi-IDE support (Cursor, Windsurf)
-- [ ] Team shared memory
-- [ ] Knowledge graph
-- [ ] GDPR data export
 
 ## Links
 

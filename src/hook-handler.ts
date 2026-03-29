@@ -437,13 +437,15 @@ async function handleSessionStart(
   };
 
   // Check marketplace + RAG search + continuation in parallel
-  const marketplaceUrl = "https://api.github.com/repos/ThisisYoYoDev/claude-plugins/contents/.claude-plugin/marketplace.json";
+  // Try GitHub API first (no cache), fallback to raw CDN if rate-limited
+  const ghApi = "https://api.github.com/repos/ThisisYoYoDev/claude-plugins/contents/.claude-plugin/marketplace.json";
+  const ghRaw = "https://raw.githubusercontent.com/ThisisYoYoDev/claude-plugins/main/.claude-plugin/marketplace.json";
   const [marketplaceResult, searchResult, continuationResult] = await Promise.allSettled([
-    fetch(marketplaceUrl, {
+    fetch(ghApi, {
       headers: { "Accept": "application/vnd.github.raw+json" },
       signal: AbortSignal.timeout(3000),
     })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => r.ok ? r.json() : fetch(ghRaw, { signal: AbortSignal.timeout(3000) }).then(r2 => r2.ok ? r2.json() : null))
       .catch(() => null),
     config.rag.sessionStart.enabled &&
     (config.rag.mode === "auto" || config.rag.mode === "aggressive")

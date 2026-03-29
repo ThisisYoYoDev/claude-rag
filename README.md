@@ -46,7 +46,7 @@ Claude RAG fixes this. It **captures every interaction** in the background, **em
 | **Search** | Hybrid (Vector + BM25 + RRF) | ChromaDB | N/A |
 | **Vector index** | DiskANN (scales to millions) | ChromaDB | N/A |
 | **Multimodal** | Images, PDF, audio, video | Text only | Text only |
-| **Cost to user** | Free (we pay for embeddings) | 2x API cost (SDK agent) | Included |
+| **Cost to user** | Free | 2x API cost (SDK agent) | Included |
 | **Architecture** | Cloud (works across devices) | Local only | Local only |
 | **Turn linking** | Q + Tools + A grouped | Observations | N/A |
 | **Privacy tags** | `<private>` stripping | `<private>` | Content exclusion |

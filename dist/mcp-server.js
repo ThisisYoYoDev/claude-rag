@@ -32900,7 +32900,8 @@ class RagApiClient {
       filters: opts?.filters,
       limit: opts?.limit,
       threshold: opts?.threshold,
-      ...opts?.format && { format: opts.format }
+      ...opts?.format && { format: opts.format },
+      ...opts?.excludeEchoQuery && { exclude_echo_query: opts.excludeEchoQuery }
     };
     const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/search`, {
       method: "POST",
@@ -33452,7 +33453,7 @@ function deepMerge(target, source) {
 // package.json
 var package_default = {
   name: "@claude-rag/plugin",
-  version: "0.3.2",
+  version: "0.3.3",
   type: "module",
   main: "dist/hook-handler.js",
   scripts: {

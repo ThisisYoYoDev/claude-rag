@@ -463,7 +463,8 @@ class RagApiClient {
       filters: opts?.filters,
       limit: opts?.limit,
       threshold: opts?.threshold,
-      ...opts?.format && { format: opts.format }
+      ...opts?.format && { format: opts.format },
+      ...opts?.excludeEchoQuery && { exclude_echo_query: opts.excludeEchoQuery }
     };
     const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/search`, {
       method: "POST",
@@ -597,7 +598,7 @@ class RagApiClient {
 // package.json
 var package_default = {
   name: "@claude-rag/plugin",
-  version: "0.3.2",
+  version: "0.3.3",
   type: "module",
   main: "dist/hook-handler.js",
   scripts: {
@@ -683,10 +684,20 @@ async function handleUserPrompt(stdin, client, config2, project, turnId) {
       } catch {}
     }
   }
+  const injState = readInjectionState(stdin.session_id);
+  injState.turnCount++;
+  if (injState.turnCount === 1 && injState.injectedEventIds.length > 0) {
+    writeInjectionState(stdin.session_id, injState);
+    return;
+  }
+  if (injState.turnCount % REFRESH_INTERVAL === 0) {
+    injState.injectedEventIds = [];
+  }
   let compactionContext = "";
   if (!isCommand && stdin.transcript_path) {
     const compacted = await detectCompaction(stdin.transcript_path, stdin.session_id);
     if (compacted) {
+      injState.injectedEventIds = [];
       try {
         const recoveryResult = await client.search("instructions decisions rules conventions preferences architecture", {
           limit: 5,
@@ -710,20 +721,37 @@ async function handleUserPrompt(stdin, client, config2, project, turnId) {
       try {
         const result = await client.search(stdin.prompt, {
           limit: config2.rag.perPrompt.maxItems,
-          threshold: config2.rag.threshold
+          threshold: config2.rag.threshold,
+          filters: { exclude_session_id: stdin.session_id },
+          excludeEchoQuery: stdin.prompt
         });
         if (result.results && result.results.length > 0) {
-          const context = formatResultsForClaude(result.results, config2.rag.maxContextTokens);
-          const summary = formatResultsSummary(result.results, result.latency_ms);
-          process.stdout.write(JSON.stringify({
-            additionalContext: compactionContext + context,
-            systemMessage: summary
-          }));
+          const knownIds = new Set(injState.injectedEventIds);
+          const newResults = result.results.filter((r) => !knownIds.has(r.event_id));
+          const cachedCount = result.results.length - newResults.length;
+          if (newResults.length > 0) {
+            const context = formatResultsForClaude(newResults, config2.rag.maxContextTokens);
+            const summary = formatResultsSummary(newResults, result.latency_ms, cachedCount);
+            process.stdout.write(JSON.stringify({
+              additionalContext: compactionContext + context,
+              systemMessage: summary
+            }));
+            injState.injectedEventIds.push(...newResults.map((r) => r.event_id));
+          } else if (cachedCount > 0) {
+            const C = { dim: "\x1B[2m", reset: "\x1B[0m", yellow: "\x1B[33m" };
+            const time = result.latency_ms ? ` ${C.dim}(${result.latency_ms}ms)${C.reset}` : "";
+            process.stdout.write(JSON.stringify({
+              systemMessage: `\uD83D\uDD0D ${C.dim}RAG: ${cachedCount} cached${time} — 0 tokens injected${C.reset}`,
+              ...compactionContext ? { additionalContext: compactionContext } : {}
+            }));
+          }
+          writeInjectionState(stdin.session_id, injState);
           return;
         }
       } catch {}
     }
   }
+  writeInjectionState(stdin.session_id, injState);
   if (compactionContext) {
     process.stdout.write(JSON.stringify({
       additionalContext: compactionContext
@@ -926,6 +954,12 @@ async function handleSessionStart(stdin, client, config2, project) {
   };
   if (additionalContext)
     output.additionalContext = additionalContext;
+  if (search && search.results && search.results.length > 0) {
+    writeInjectionState(stdin.session_id, {
+      injectedEventIds: search.results.map((r) => r.event_id),
+      turnCount: 0
+    });
+  }
   process.stdout.write(JSON.stringify(output));
 }
 function stripPrivateTags(content) {
@@ -1038,6 +1072,23 @@ async function detectCompaction(transcriptPath, sessionId) {
     return false;
   }
 }
+var REFRESH_INTERVAL = 10;
+function readInjectionState(sessionId) {
+  try {
+    const { readFileSync: readFileSync2 } = __require("node:fs");
+    const raw = readFileSync2(`/tmp/claude-rag/injection-${sessionId}.json`, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return { injectedEventIds: [], turnCount: 0 };
+  }
+}
+function writeInjectionState(sessionId, state) {
+  try {
+    const { writeFileSync: writeFileSync2, mkdirSync: mkdirSync2 } = __require("node:fs");
+    mkdirSync2("/tmp/claude-rag", { recursive: true });
+    writeFileSync2(`/tmp/claude-rag/injection-${sessionId}.json`, JSON.stringify(state));
+  } catch {}
+}
 function detectProject(cwd) {
   if (!cwd)
     return "unknown";
@@ -1110,7 +1161,7 @@ function formatResultsForClaude(results, maxTokens) {
   }
   return output;
 }
-function formatResultsSummary(results, latencyMs) {
+function formatResultsSummary(results, latencyMs, cachedCount) {
   const C = {
     reset: "\x1B[0m",
     yellow: "\x1B[33m",
@@ -1167,7 +1218,8 @@ A: `)[1] || "";
   });
   const more = results.length > 3 ? `  ${C.dim}... +${results.length - 3} more${C.reset}` : "";
   const time = latencyMs ? ` ${C.dim}(${latencyMs}ms)${C.reset}` : "";
-  return `\uD83D\uDD0D ${C.purple}RAG found ${results.length} match${results.length > 1 ? "es" : ""}${C.reset}${time}
+  const cached = cachedCount ? ` ${C.dim}+ ${cachedCount} cached${C.reset}` : "";
+  return `\uD83D\uDD0D ${C.purple}RAG: ${results.length} new${cached}${C.reset}${time}
 ${lines.join(`
 `)}${more ? `
 ` + more : ""}`;

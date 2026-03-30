@@ -164,11 +164,27 @@ async function handleUserPrompt(
     }
   }
 
-  // 2.5 Post-compaction recovery
+  // 2. Read injection state (track what's already in context)
+  const injState = readInjectionState(stdin.session_id);
+  injState.turnCount++;
+
+  // Skip RAG on first prompt if SessionStart already injected context
+  if (injState.turnCount === 1 && injState.injectedEventIds.length > 0) {
+    writeInjectionState(stdin.session_id, injState);
+    return;
+  }
+
+  // Periodic refresh: clear cache every N turns so context gets re-injected
+  if (injState.turnCount % REFRESH_INTERVAL === 0) {
+    injState.injectedEventIds = [];
+  }
+
+  // 2.5 Post-compaction recovery — clear injection cache (AI lost context)
   let compactionContext = "";
   if (!isCommand && stdin.transcript_path) {
     const compacted = await detectCompaction(stdin.transcript_path, stdin.session_id);
     if (compacted) {
+      injState.injectedEventIds = []; // Reset: everything needs re-injection
       try {
         const recoveryResult = await client.search(
           "instructions decisions rules conventions preferences architecture",
@@ -197,21 +213,43 @@ async function handleUserPrompt(
         const result = await client.search(stdin.prompt, {
           limit: config.rag.perPrompt.maxItems,
           threshold: config.rag.threshold,
+          filters: { exclude_session_id: stdin.session_id },
+          excludeEchoQuery: stdin.prompt, // backend filters echoes
         });
 
         if (result.results && result.results.length > 0) {
-          // Build additionalContext for Claude (full details)
-          const context = formatResultsForClaude(result.results, config.rag.maxContextTokens);
+          // Plugin-side: only filter already-injected events (backend handles echo filtering)
+          const knownIds = new Set(injState.injectedEventIds);
+          const newResults = result.results.filter((r: any) => !knownIds.has(r.event_id));
+          const cachedCount = result.results.length - newResults.length;
 
-          // Build visible summary for the user
-          const summary = formatResultsSummary(result.results, result.latency_ms);
+          if (newResults.length > 0) {
+            // Inject only NEW results
+            const context = formatResultsForClaude(newResults, config.rag.maxContextTokens);
+            const summary = formatResultsSummary(newResults, result.latency_ms, cachedCount);
 
-          process.stdout.write(
-            JSON.stringify({
-              additionalContext: compactionContext + context,
-              systemMessage: summary,
-            })
-          );
+            process.stdout.write(
+              JSON.stringify({
+                additionalContext: compactionContext + context,
+                systemMessage: summary,
+              })
+            );
+
+            // Track injected event_ids
+            injState.injectedEventIds.push(...newResults.map((r: any) => r.event_id));
+          } else if (cachedCount > 0) {
+            // All results already in context — show lightweight message
+            const C = { dim: "\x1b[2m", reset: "\x1b[0m", yellow: "\x1b[33m" };
+            const time = result.latency_ms ? ` ${C.dim}(${result.latency_ms}ms)${C.reset}` : "";
+            process.stdout.write(
+              JSON.stringify({
+                systemMessage: `🔍 ${C.dim}RAG: ${cachedCount} cached${time} — 0 tokens injected${C.reset}`,
+                ...(compactionContext ? { additionalContext: compactionContext } : {}),
+              })
+            );
+          }
+
+          writeInjectionState(stdin.session_id, injState);
           return;
         }
       } catch {
@@ -219,6 +257,9 @@ async function handleUserPrompt(
       }
     }
   }
+
+  // Always persist state (even if no results, to track turnCount)
+  writeInjectionState(stdin.session_id, injState);
 
   // If compaction recovery found context but regular RAG didn't, still inject it
   if (compactionContext) {
@@ -500,6 +541,14 @@ async function handleSessionStart(
   };
   if (additionalContext) output.additionalContext = additionalContext;
 
+  // Record injected event_ids so handleUserPrompt doesn't re-inject them
+  if (search && search.results && search.results.length > 0) {
+    writeInjectionState(stdin.session_id, {
+      injectedEventIds: search.results.map((r: any) => r.event_id),
+      turnCount: 0,
+    });
+  }
+
   process.stdout.write(JSON.stringify(output));
 }
 
@@ -691,6 +740,35 @@ async function detectCompaction(transcriptPath: string, sessionId: string): Prom
   }
 }
 
+// ==========================================
+// Injection state — track what's already in context
+// ==========================================
+
+const REFRESH_INTERVAL = 10;
+
+interface InjectionState {
+  injectedEventIds: string[];
+  turnCount: number;
+}
+
+function readInjectionState(sessionId: string): InjectionState {
+  try {
+    const { readFileSync } = require("node:fs");
+    const raw = readFileSync(`/tmp/claude-rag/injection-${sessionId}.json`, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return { injectedEventIds: [], turnCount: 0 };
+  }
+}
+
+function writeInjectionState(sessionId: string, state: InjectionState): void {
+  try {
+    const { writeFileSync, mkdirSync } = require("node:fs");
+    mkdirSync("/tmp/claude-rag", { recursive: true });
+    writeFileSync(`/tmp/claude-rag/injection-${sessionId}.json`, JSON.stringify(state));
+  } catch {}
+}
+
 function detectProject(cwd?: string): string {
   if (!cwd) return "unknown";
   // Use the last directory name as project name
@@ -759,7 +837,7 @@ function formatResultsForClaude(results: any[], maxTokens: number): string {
 }
 
 /** Format a visible summary for the user (shown as system message in conversation) */
-function formatResultsSummary(results: any[], latencyMs?: number): string {
+function formatResultsSummary(results: any[], latencyMs?: number, cachedCount?: number): string {
   // ANSI color codes
   const C = {
     reset: "\x1b[0m",
@@ -821,7 +899,8 @@ function formatResultsSummary(results: any[], latencyMs?: number): string {
   const more = results.length > 3 ? `  ${C.dim}... +${results.length - 3} more${C.reset}` : "";
   const time = latencyMs ? ` ${C.dim}(${latencyMs}ms)${C.reset}` : "";
 
-  return `🔍 ${C.purple}RAG found ${results.length} match${results.length > 1 ? "es" : ""}${C.reset}${time}\n${lines.join("\n")}${more ? "\n" + more : ""}`;
+  const cached = cachedCount ? ` ${C.dim}+ ${cachedCount} cached${C.reset}` : "";
+  return `🔍 ${C.purple}RAG: ${results.length} new${cached}${C.reset}${time}\n${lines.join("\n")}${more ? "\n" + more : ""}`;
 }
 
 // Run

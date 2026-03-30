@@ -56,14 +56,16 @@ export class RagApiClient {
       limit?: number;
       threshold?: number;
       format?: "full" | "claude";
+      excludeEchoQuery?: string;
     }
   ): Promise<SearchResponse & { context?: string }> {
-    const body: SearchRequest & { format?: string } = {
+    const body: SearchRequest & { format?: string; exclude_echo_query?: string } = {
       query,
       filters: opts?.filters,
       limit: opts?.limit,
       threshold: opts?.threshold,
       ...(opts?.format && { format: opts.format }),
+      ...(opts?.excludeEchoQuery && { exclude_echo_query: opts.excludeEchoQuery }),
     };
     const res = await this.fetchWithTimeout(`${this.endpoint}/api/v1/search`, {
       method: "POST",
